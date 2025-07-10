@@ -1,4 +1,5 @@
-# rtgym interfaces for Trackmania
+# File: tmrl/custom/tm/tm_gym_interfaces.py
+# rtgym interfaces for Trackmania with enhanced reward support
 
 # standard library imports
 import logging
@@ -15,7 +16,7 @@ from rtgym import RealTimeGymInterface
 
 # local imports
 import tmrl.config.config_constants as cfg
-from tmrl.custom.tm.utils.compute_reward import RewardFunction
+from tmrl.custom.tm.utils.compute_reward import RewardFunction, EnhancedRewardFunction, SpeedFocusedRewardFunction, CheckpointRewardFunction
 from tmrl.custom.tm.utils.control_gamepad import control_gamepad, gamepad_reset, gamepad_close_finish_pop_up_tm20
 from tmrl.custom.tm.utils.control_mouse import mouse_close_finish_pop_up_tm20
 from tmrl.custom.tm.utils.control_keyboard import apply_control, keyres
@@ -38,7 +39,9 @@ class TM2020Interface(RealTimeGymInterface):
                  gamepad: bool = True,
                  save_replays: bool = False,
                  grayscale: bool = True,
-                 resize_to=(64, 64)):
+                 resize_to=(64, 64),
+                 reward_type: str = "original",
+                 reward_params: dict = None):
         """
         Base rtgym interface for TrackMania 2020 (Full environment)
 
@@ -48,6 +51,12 @@ class TM2020Interface(RealTimeGymInterface):
             save_replays: bool: whether to save TrackMania replays on successful episodes
             grayscale: bool: whether to output grayscale images or color images
             resize_to: Tuple[int, int]: resize output images to this (width, height)
+            reward_type: str: type of reward function to use
+                - "original": Original trajectory following (default)
+                - "enhanced": Multi-component balanced reward
+                - "speed": Speed-focused aggressive reward
+                - "checkpoint": Checkpoint-based progression reward
+            reward_params: dict: optional parameters to override reward function defaults
         """
         self.last_time = None
         self.img_hist_len = img_hist_len
@@ -64,6 +73,9 @@ class TM2020Interface(RealTimeGymInterface):
         self.resize_to = resize_to
         self.finish_reward = cfg.REWARD_CONFIG['END_OF_TRACK']
         self.constant_penalty = cfg.REWARD_CONFIG['CONSTANT_PENALTY']
+        self.reward_type = reward_type
+        self.reward_params = reward_params if reward_params is not None else {}
+        self.last_action = None  # Track actions for enhanced rewards
 
         self.initialized = False
 
@@ -77,12 +89,57 @@ class TM2020Interface(RealTimeGymInterface):
         self.last_time = time.time()
         self.img_hist = deque(maxlen=self.img_hist_len)
         self.img = None
-        self.reward_function = RewardFunction(reward_data_path=cfg.REWARD_PATH,
-                                              nb_obs_forward=cfg.REWARD_CONFIG['CHECK_FORWARD'],
-                                              nb_obs_backward=cfg.REWARD_CONFIG['CHECK_BACKWARD'],
-                                              nb_zero_rew_before_failure=cfg.REWARD_CONFIG['FAILURE_COUNTDOWN'],
-                                              min_nb_steps_before_failure=cfg.REWARD_CONFIG['MIN_STEPS'],
-                                              max_dist_from_traj=cfg.REWARD_CONFIG['MAX_STRAY'])
+        
+        # Initialize the chosen reward function
+        if self.reward_type == "enhanced":
+            # Enhanced multi-component reward
+            self.reward_function = EnhancedRewardFunction(
+                reward_data_path=cfg.REWARD_PATH,
+                nb_obs_forward=self.reward_params.get('nb_obs_forward', 15),
+                nb_obs_backward=self.reward_params.get('nb_obs_backward', 10),
+                nb_zero_rew_before_failure=self.reward_params.get('nb_zero_rew_before_failure', 15),
+                min_nb_steps_before_failure=self.reward_params.get('min_nb_steps_before_failure', int(3.5 * 20)),
+                max_dist_from_traj=self.reward_params.get('max_dist_from_traj', 80.0),
+                speed_reward_weight=self.reward_params.get('speed_reward_weight', 0.3),
+                progress_reward_weight=self.reward_params.get('progress_reward_weight', 0.4),
+                smooth_control_weight=self.reward_params.get('smooth_control_weight', 0.2),
+                checkpoint_reward_weight=self.reward_params.get('checkpoint_reward_weight', 0.1)
+            )
+        elif self.reward_type == "speed":
+            # Speed-focused reward
+            self.reward_function = SpeedFocusedRewardFunction(
+                reward_data_path=cfg.REWARD_PATH,
+                nb_obs_forward=self.reward_params.get('nb_obs_forward', 20),
+                nb_obs_backward=self.reward_params.get('nb_obs_backward', 5),
+                nb_zero_rew_before_failure=self.reward_params.get('nb_zero_rew_before_failure', 20),
+                min_nb_steps_before_failure=self.reward_params.get('min_nb_steps_before_failure', int(3 * 20)),
+                max_dist_from_traj=self.reward_params.get('max_dist_from_traj', 100.0),
+                target_speed=self.reward_params.get('target_speed', 180.0),
+                min_speed=self.reward_params.get('min_speed', 30.0),
+                speed_exp=self.reward_params.get('speed_exp', 2.0)
+            )
+        elif self.reward_type == "checkpoint":
+            # Checkpoint-based reward
+            self.reward_function = CheckpointRewardFunction(
+                reward_data_path=cfg.REWARD_PATH,
+                num_checkpoints=self.reward_params.get('num_checkpoints', 20),
+                checkpoint_reward=self.reward_params.get('checkpoint_reward', 10.0),
+                time_bonus_per_checkpoint=self.reward_params.get('time_bonus_per_checkpoint', 5.0),
+                max_time_per_checkpoint=self.reward_params.get('max_time_per_checkpoint', 200),
+                min_speed_bonus=self.reward_params.get('min_speed_bonus', 50.0),
+                exploration_bonus=self.reward_params.get('exploration_bonus', 0.1)
+            )
+        else:
+            # Default to original reward function
+            self.reward_function = RewardFunction(
+                reward_data_path=cfg.REWARD_PATH,
+                nb_obs_forward=self.reward_params.get('nb_obs_forward', cfg.REWARD_CONFIG['CHECK_FORWARD']),
+                nb_obs_backward=self.reward_params.get('nb_obs_backward', cfg.REWARD_CONFIG['CHECK_BACKWARD']),
+                nb_zero_rew_before_failure=self.reward_params.get('nb_zero_rew_before_failure', cfg.REWARD_CONFIG['FAILURE_COUNTDOWN']),
+                min_nb_steps_before_failure=self.reward_params.get('min_nb_steps_before_failure', cfg.REWARD_CONFIG['MIN_STEPS']),
+                max_dist_from_traj=self.reward_params.get('max_dist_from_traj', cfg.REWARD_CONFIG['MAX_STRAY'])
+            )
+            
         self.client = TM2020OpenPlanetClient()
 
     def initialize(self):
@@ -98,6 +155,10 @@ class TM2020Interface(RealTimeGymInterface):
         Args:
             control: np.array: [forward,backward,right,left]
         """
+        # Track action for enhanced rewards
+        if control is not None:
+            self.last_action = control.copy()
+            
         if self.gamepad:
             if control is not None:
                 control_gamepad(self.j, control)
@@ -139,6 +200,7 @@ class TM2020Interface(RealTimeGymInterface):
         self.reset_race()
         time_sleep = max(0, cfg.SLEEP_TIME_AT_RESET - 0.1) if self.gamepad else cfg.SLEEP_TIME_AT_RESET
         time.sleep(time_sleep)  # must be long enough for image to be refreshed
+        self.last_action = None  # Reset action tracking
 
     def reset(self, seed=None, options=None):
         """
@@ -187,26 +249,38 @@ class TM2020Interface(RealTimeGymInterface):
         obs must be a list of numpy arrays
         """
         data, img = self.grab_data_and_img()
-        speed = np.array([
-            data[0],
-        ], dtype='float32')
-        gear = np.array([
-            data[9],
-        ], dtype='float32')
-        rpm = np.array([
-            data[10],
-        ], dtype='float32')
-        rew, terminated = self.reward_function.compute_reward(pos=np.array([data[2], data[3], data[4]]))
+        speed_value = data[0]  # Speed in km/h
+        speed = np.array([speed_value], dtype='float32')
+        gear = np.array([data[9]], dtype='float32')
+        rpm = np.array([data[10]], dtype='float32')
+        
+        # Position for reward computation
+        pos = np.array([data[2], data[3], data[4]])
+        
+        # Check if reward function supports enhanced parameters
+        if self.reward_type in ["enhanced", "speed", "checkpoint"]:
+            # New reward functions with speed and action support
+            rew, terminated = self.reward_function.compute_reward(
+                pos=pos,
+                speed=speed_value,
+                action=self.last_action if self.last_action is not None else self.get_default_action()
+            )
+        else:
+            # Original reward function
+            rew, terminated = self.reward_function.compute_reward(pos=pos)
+        
         self.img_hist.append(img)
         imgs = np.array(list(self.img_hist))
         obs = [speed, gear, rpm, imgs]
         end_of_track = bool(data[8])
         info = {}
+        
         if end_of_track:
             terminated = True
             rew += self.finish_reward
         rew += self.constant_penalty
         rew = np.float32(rew)
+        
         return obs, rew, terminated, info
 
     def get_observation_space(self):
@@ -240,8 +314,9 @@ class TM2020Interface(RealTimeGymInterface):
 
 
 class TM2020InterfaceLidar(TM2020Interface):
-    def __init__(self, img_hist_len=1, gamepad=False, save_replays: bool = False):
-        super().__init__(img_hist_len, gamepad, save_replays)
+    def __init__(self, img_hist_len=1, gamepad=False, save_replays: bool = False, 
+                 reward_type: str = "original", reward_params: dict = None):
+        super().__init__(img_hist_len, gamepad, save_replays, reward_type=reward_type, reward_params=reward_params)
         self.window_interface = None
         self.lidar = None
 
@@ -279,7 +354,18 @@ class TM2020InterfaceLidar(TM2020Interface):
         obs must be a list of numpy arrays
         """
         img, speed, data = self.grab_lidar_speed_and_data()
-        rew, terminated = self.reward_function.compute_reward(pos=np.array([data[2], data[3], data[4]]))
+        pos = np.array([data[2], data[3], data[4]])
+        
+        # Check if reward function supports enhanced parameters
+        if self.reward_type in ["enhanced", "speed", "checkpoint"]:
+            rew, terminated = self.reward_function.compute_reward(
+                pos=pos,
+                speed=data[0],
+                action=self.last_action if self.last_action is not None else self.get_default_action()
+            )
+        else:
+            rew, terminated = self.reward_function.compute_reward(pos=pos)
+            
         self.img_hist.append(img)
         imgs = np.array(list(self.img_hist), dtype='float32')
         obs = [speed, imgs]
@@ -326,7 +412,18 @@ class TM2020InterfaceLidarProgress(TM2020InterfaceLidar):
         obs must be a list of numpy arrays
         """
         img, speed, data = self.grab_lidar_speed_and_data()
-        rew, terminated = self.reward_function.compute_reward(pos=np.array([data[2], data[3], data[4]]))
+        pos = np.array([data[2], data[3], data[4]])
+        
+        # Check if reward function supports enhanced parameters
+        if self.reward_type in ["enhanced", "speed", "checkpoint"]:
+            rew, terminated = self.reward_function.compute_reward(
+                pos=pos,
+                speed=data[0],
+                action=self.last_action if self.last_action is not None else self.get_default_action()
+            )
+        else:
+            rew, terminated = self.reward_function.compute_reward(pos=pos)
+            
         progress = np.array([self.reward_function.cur_idx / self.reward_function.datalen], dtype='float32')
         self.img_hist.append(img)
         imgs = np.array(list(self.img_hist), dtype='float32')
@@ -354,4 +451,49 @@ class TM2020InterfaceLidarProgress(TM2020InterfaceLidar):
 
 
 if __name__ == "__main__":
-    pass
+    # Example usage with different reward functions
+    
+    # Default: Original reward function
+    env_original = TM2020Interface(
+        img_hist_len=4,
+        gamepad=True,
+        save_replays=False
+    )
+    
+    # Enhanced multi-component reward
+    env_enhanced = TM2020Interface(
+        img_hist_len=4,
+        gamepad=True,
+        save_replays=False,
+        reward_type="enhanced",
+        reward_params={
+            'speed_reward_weight': 0.3,
+            'progress_reward_weight': 0.4,
+            'smooth_control_weight': 0.2,
+            'checkpoint_reward_weight': 0.1
+        }
+    )
+    
+    # Speed-focused reward for aggressive driving
+    env_speed = TM2020Interface(
+        img_hist_len=4,
+        gamepad=True,
+        save_replays=False,
+        reward_type="speed",
+        reward_params={
+            'target_speed': 200.0,
+            'speed_exp': 2.5
+        }
+    )
+    
+    # Checkpoint-based reward for early training
+    env_checkpoint = TM2020Interface(
+        img_hist_len=4,
+        gamepad=True,
+        save_replays=False,
+        reward_type="checkpoint",
+        reward_params={
+            'num_checkpoints': 15,
+            'checkpoint_reward': 15.0
+        }
+    )
