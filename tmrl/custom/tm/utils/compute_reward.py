@@ -17,7 +17,9 @@ class RewardFunction:
                  nb_obs_backward=10,
                  nb_zero_rew_before_failure=10,
                  min_nb_steps_before_failure=int(3.5 * 20),
-                 max_dist_from_traj=60.0):
+                 max_dist_from_traj=60.0,
+                 max_speed_for_penalty=7,
+                 nb_steps_before_speed_penalty=20):
         """
         Instantiates a reward function for TM2020.
 
@@ -45,6 +47,10 @@ class RewardFunction:
         self.step_counter = 0
         self.failure_counter = 0
         self.datalen = len(self.data)
+
+        self.max_speed_for_penalty = max_speed_for_penalty
+        self.nb_steps_before_speed_penalty = nb_steps_before_speed_penalty
+        self.prev_data = []
 
         # self.traj = []
 
@@ -114,7 +120,7 @@ class RewardFunction:
 
         return reward, terminated
     
-    def compute_reward(self, pos, speed):
+    def compute_reward(self, pos, data):
         """
         Computes the current reward given the position pos
         Args:
@@ -130,6 +136,14 @@ class RewardFunction:
         index = self.cur_idx  # cur_idx is where we were last step in the trajectory
         temp = self.nb_obs_forward  # counter used to find cuts
         best_index = 0  # index best matching the target pos
+
+        speed = data[0]
+
+        if len(self.prev_data) == 0:
+            self.prev_data = data
+            displacement = data[1]
+        else:
+            displacement = data[1] - self.prev_data[1]
 
         while True:
             dist = np.linalg.norm(pos - self.data[index])  # distance of the current index to target pos
@@ -148,7 +162,7 @@ class RewardFunction:
                 break  # we found the best index and can break the while loop
 
         # The reward is then proportional to the number of passed indexes (i.e., track distance):
-        reward = (best_index - self.cur_idx) / 100.0
+        reward = (best_index - self.cur_idx)
 
         if best_index == self.cur_idx:  # if the best index didn't change, we rewind (more Markovian reward)
             min_dist = np.inf
@@ -178,6 +192,24 @@ class RewardFunction:
 
         self.cur_idx = best_index  # finally, we save our new best matching index
 
+
+        # if not going fast enough after some initial steps, apply penalty to encourage acceleration
+        if self.step_counter > self.nb_steps_before_speed_penalty:
+            if speed < self.max_speed_for_penalty:
+                reward -= 0.5
+
+        # negative velocity gives big penalty because it should never go backwards, and should be discouraged
+        if displacement < 0:
+            reward -= 5
+
+        # loss of speed means deceleration and 50% loss indicates a collision, which should be discouraged
+        if (speed > 0) and ((self.prev_data[0] / speed) > 2):
+            reward -= 5
+
+        print("step:", self.step_counter, " "*(5-len(str(self.step_counter))), " reward:", reward, "  speed:", speed, data[1])
+
+        self.prev_data = data
+        
         return reward, terminated
 
     def reset(self):
@@ -194,4 +226,4 @@ class RewardFunction:
         self.step_counter = 0
         self.failure_counter = 0
 
-        # self.traj = []
+        self.prev_data = []

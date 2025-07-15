@@ -1,3 +1,18 @@
+"""
+data list content:
+0 - speed
+1 - distance
+2 - position x
+3 - position y
+4 - position z
+5 - input steer
+6 - input gas pedal
+7 - is braking 1 or 0
+8 - finished 1 or 0
+9 - engine gear
+10 - engine rpm
+"""
+
 # rtgym interfaces for Trackmania
 
 # standard library imports
@@ -326,7 +341,7 @@ class TM2020InterfaceLidarProgress(TM2020InterfaceLidar):
         obs must be a list of numpy arrays
         """
         img, speed, data = self.grab_lidar_speed_and_data()
-        rew, terminated = self.reward_function.compute_reward(pos=np.array([data[2], data[3], data[4]]))
+        rew, terminated = self.reward_function.compute_reward(pos=np.array([data[2], data[3], data[4]]), data=data)
         progress = np.array([self.reward_function.cur_idx / self.reward_function.datalen], dtype='float32')
         self.img_hist.append(img)
         imgs = np.array(list(self.img_hist), dtype='float32')
