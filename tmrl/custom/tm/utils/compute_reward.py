@@ -21,8 +21,9 @@ class RewardFunction:
                  nb_zero_rew_before_failure=10,
                  min_nb_steps_before_failure=int(3.5 * 20),
                  max_dist_from_traj=60.0,
-                 max_speed_for_penalty=7,
-                 nb_steps_before_speed_penalty=20):
+                 nb_steps_before_speed_penalty=20,
+                 max_speed_for_penalty=10,
+                 min_speed_for_reward=40):
         """
         Instantiates a reward function for TM2020.
 
@@ -51,10 +52,12 @@ class RewardFunction:
         self.failure_counter = 0
         self.datalen = len(self.data)
 
-        self.max_speed_for_penalty = max_speed_for_penalty
         self.nb_steps_before_speed_penalty = nb_steps_before_speed_penalty
+        self.max_speed_for_penalty = max_speed_for_penalty
+        self.min_speed_for_reward = min_speed_for_reward
         self.prev_data = []
         self.ws_client = ws_client
+        self.minor_collision_counter = 0
 
         # self.traj = []
 
@@ -205,10 +208,12 @@ class RewardFunction:
         self.cur_idx = best_index  # finally, we save our new best matching index
 
 
-        # if not going fast enough after some initial steps, apply penalty to encourage acceleration
+        # if not going fast enough after some initial steps, apply penalty to encourage going fast
         if self.step_counter > self.nb_steps_before_speed_penalty:
             if speed < self.max_speed_for_penalty:
                 reward_multiplier -= 0.6
+            elif speed > self.min_speed_for_reward:
+                reward_multiplier += 0.5
 
         # enigne gear 0 is R and neither pressing gas or braking. these give big penalty because it should never go backwards or stay still, and should be discouraged
         if (gear == 0) or not (accelerating or braking):
@@ -223,9 +228,23 @@ class RewardFunction:
             elif ((speed / self.prev_data[0]) < 0.87) or ((speed / self.prev_data[0]) < 0.98 and not braking): # minor collision
                 print("MINOR COLLISION")
                 reward_multiplier -= 0.7
-        
+                self.minor_collision_counter += 1
+
+        elif speed > 1 and self.prev_data[0] > 1 and not braking and (speed / self.prev_data[0]) < 0.8:
+            print("MINOR COLLISION")
+            reward_multiplier -= 0.7
+            self.minor_collision_counter += 1
+
+        elif rpm > 10000 and displacement < 0.8 and not braking:
+            print("MINOR COLLISION")
+            reward_multiplier -= 0.7
+            self.minor_collision_counter += 1
+    
         #if reward_multiplier < 0:
         #    reward_multiplier = 0
+        if self.minor_collision_counter > 10:
+            reward = -20
+            terminated = True
 
         if reward == 0:
             reward = 10
@@ -249,7 +268,7 @@ class RewardFunction:
         }
         self.ws_client.send_sync(datatosend)
 
-        print("step:", self.step_counter, " "*(4-len(str(self.step_counter))), "raw rew:", reward, " "*(3-len(str(reward))), "mult:", "{:.2f}".format(reward_multiplier), " "*(5-len(str("{:.2f}".format(reward_multiplier)))), " final rew:", "{:.2f}".format(reward * reward_multiplier), " "*(4-len(str("{:.2f}".format(reward * reward_multiplier)))), "   speed:", "{:.3f}".format(speed), "dist:", "{:.2f}".format(data[1]), "  extra:  ", "{:.2f}".format(data[5]), "{:.2f}".format(data[6]), data[7], data[9], "{:.2f}".format(data[10]))
+        print("step:", self.step_counter, " "*(4-len(str(self.step_counter))), "raw rew:", reward, " "*(3-len(str(reward))), "mult:", "{:.2f}".format(reward_multiplier), " "*(5-len(str("{:.2f}".format(reward_multiplier)))), " final rew:", "{:.2f}".format(reward * reward_multiplier), " "*(4-len(str("{:.2f}".format(reward * reward_multiplier)))), "   speed:", "{:.3f}".format(speed), "dist:", "{:.2f}".format(distance), "displ:", "{:.2f}".format(displacement), "  extra:  ", "{:.2f}".format(data[5]), "{:.2f}".format(data[6]), data[7], data[9], "{:.2f}".format(data[10]))
 
         self.prev_data = data
         
@@ -269,4 +288,5 @@ class RewardFunction:
         self.step_counter = 0
         self.failure_counter = 0
 
+        self.minor_collision_counter = 0
         self.prev_data = []
