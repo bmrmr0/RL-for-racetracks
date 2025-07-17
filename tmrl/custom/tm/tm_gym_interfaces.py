@@ -37,11 +37,6 @@ from tmrl.custom.tm.utils.control_keyboard import apply_control, keyres
 from tmrl.custom.tm.utils.window import WindowInterface
 from tmrl.custom.tm.utils.tools import Lidar, TM2020OpenPlanetClient, save_ghost
 
-# Globals ==============================================================================================================
-
-CHECK_FORWARD = 500  # this allows (and rewards) 50m cuts
-
-
 # Interface for Trackmania 2020 ========================================================================================
 
 class TM2020Interface(RealTimeGymInterface):
@@ -83,6 +78,41 @@ class TM2020Interface(RealTimeGymInterface):
         self.initialized = False
 
     def initialize_common(self):
+        
+        # graphing server initialization
+        SERVER_HOST = "127.0.0.1"
+        SERVER_PORT = 6789
+
+        import socket
+
+        def is_server_running():
+            try:
+                with socket.create_connection((SERVER_HOST, SERVER_PORT), timeout=1):
+                    return True
+            except OSError:
+                return False
+        
+        def start_server():
+            print("[Graphing Server] Starting graphing server")
+            from pathlib import Path
+            import subprocess
+            subprocess.Popen(['start', '/min', 'cmd', '/c', "python", str(Path(__file__).resolve().parent.parent.parent)+"//logging//graphing_server.py"], shell=True)
+
+        if not is_server_running():
+            start_server()
+            time.sleep(1)
+        else:
+            print("[Graphing Server] Graphing server is already running")
+
+        # graphing client initialization
+        import asyncio
+        from tmrl.logging.graphing_client import WebSocketClient
+        
+        self.ws_client = WebSocketClient("ws://127.0.0.1:6789")
+        self.ws_client.start()
+        print("[Graphing Client] Connected to the graphing server")
+
+        # tmrl initialization
         if self.gamepad:
             import vgamepad as vg
             self.j = vg.VX360Gamepad()
@@ -93,11 +123,12 @@ class TM2020Interface(RealTimeGymInterface):
         self.img_hist = deque(maxlen=self.img_hist_len)
         self.img = None
         self.reward_function = RewardFunction(reward_data_path=cfg.REWARD_PATH,
-                                              nb_obs_forward=cfg.REWARD_CONFIG['CHECK_FORWARD'],
-                                              nb_obs_backward=cfg.REWARD_CONFIG['CHECK_BACKWARD'],
-                                              nb_zero_rew_before_failure=cfg.REWARD_CONFIG['FAILURE_COUNTDOWN'],
-                                              min_nb_steps_before_failure=cfg.REWARD_CONFIG['MIN_STEPS'],
-                                              max_dist_from_traj=cfg.REWARD_CONFIG['MAX_STRAY'])
+                                            ws_client = self.ws_client,
+                                            nb_obs_forward=cfg.REWARD_CONFIG['CHECK_FORWARD'],
+                                            nb_obs_backward=cfg.REWARD_CONFIG['CHECK_BACKWARD'],
+                                            nb_zero_rew_before_failure=cfg.REWARD_CONFIG['FAILURE_COUNTDOWN'],
+                                            min_nb_steps_before_failure=cfg.REWARD_CONFIG['MIN_STEPS'],
+                                            max_dist_from_traj=cfg.REWARD_CONFIG['MAX_STRAY'])
         self.client = TM2020OpenPlanetClient()
 
     def initialize(self):

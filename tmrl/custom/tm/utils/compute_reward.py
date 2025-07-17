@@ -6,6 +6,8 @@ import pickle
 import numpy as np
 import logging
 
+# asyncio for graph server connection
+import asyncio
 
 class RewardFunction:
     """
@@ -13,6 +15,7 @@ class RewardFunction:
     """
     def __init__(self,
                  reward_data_path,
+                 ws_client,
                  nb_obs_forward=10,
                  nb_obs_backward=10,
                  nb_zero_rew_before_failure=10,
@@ -51,6 +54,7 @@ class RewardFunction:
         self.max_speed_for_penalty = max_speed_for_penalty
         self.nb_steps_before_speed_penalty = nb_steps_before_speed_penalty
         self.prev_data = []
+        self.ws_client = ws_client
 
         # self.traj = []
 
@@ -137,13 +141,21 @@ class RewardFunction:
         temp = self.nb_obs_forward  # counter used to find cuts
         best_index = 0  # index best matching the target pos
 
+        reward = 0
+        reward_multiplier = 1
+
+        distance = data[1]
         speed = data[0]
+        accelerating = True if data[6] > 0.02 else False
+        braking = True if data[7] == 1 else False
+        gear = data[9]
+        rpm = data[10]
 
         if len(self.prev_data) == 0:
             self.prev_data = data
-            displacement = data[1]
+            displacement = distance
         else:
-            displacement = data[1] - self.prev_data[1]
+            displacement = distance - self.prev_data[1]
 
         while True:
             dist = np.linalg.norm(pos - self.data[index])  # distance of the current index to target pos
@@ -162,7 +174,7 @@ class RewardFunction:
                 break  # we found the best index and can break the while loop
 
         # The reward is then proportional to the number of passed indexes (i.e., track distance):
-        reward = (best_index - self.cur_idx)
+        reward += (best_index - self.cur_idx)
 
         if best_index == self.cur_idx:  # if the best index didn't change, we rewind (more Markovian reward)
             min_dist = np.inf
@@ -196,21 +208,52 @@ class RewardFunction:
         # if not going fast enough after some initial steps, apply penalty to encourage acceleration
         if self.step_counter > self.nb_steps_before_speed_penalty:
             if speed < self.max_speed_for_penalty:
-                reward -= 0.5
+                reward_multiplier -= 0.6
 
-        # negative velocity gives big penalty because it should never go backwards, and should be discouraged
-        if displacement < 0:
-            reward -= 5
+        # enigne gear 0 is R and neither pressing gas or braking. these give big penalty because it should never go backwards or stay still, and should be discouraged
+        if (gear == 0) or not (accelerating or braking):
+            reward_multiplier -= 0.8
 
-        # loss of speed means deceleration and 50% loss indicates a collision, which should be discouraged
-        if (speed > 0) and ((self.prev_data[0] / speed) > 2):
-            reward -= 5
+        # sudden loss of speed without braking indicates a collision and should be discouraged
+        if speed > 0 and self.prev_data[0] > 30:
+            if (speed / self.prev_data[0]) < 0.63: # major collision, even with braking
+                print("MAJOR COLLISION - RUN TERMINATED")
+                reward = -20
+                terminated = True
+            elif ((speed / self.prev_data[0]) < 0.87) or ((speed / self.prev_data[0]) < 0.98 and not braking): # minor collision
+                print("MINOR COLLISION")
+                reward_multiplier -= 0.7
+        
+        #if reward_multiplier < 0:
+        #    reward_multiplier = 0
 
-        print("step:", self.step_counter, " "*(5-len(str(self.step_counter))), " reward:", reward, "  speed:", speed, data[1])
+        if reward == 0:
+            reward = 10
+            if 0 < reward_multiplier < 1:
+                reward_multiplier = 1 - reward_multiplier
+                reward_multiplier *= -1
+            elif reward_multiplier < 0:
+                reward_multiplier -= 1
+        
+        #print(data[5], data[6], data[7], data[9], data[10])
+        datatosend = {
+            "speed": speed,
+            "distance": distance,
+            "displacement": displacement,
+            "gas": data[6],
+            "braking": braking,
+            "input steer": data[5],
+            "gear": gear,
+            "rpm": rpm,
+            "reward": reward * reward_multiplier
+        }
+        self.ws_client.send_sync(datatosend)
+
+        print("step:", self.step_counter, " "*(4-len(str(self.step_counter))), "raw rew:", reward, " "*(3-len(str(reward))), "mult:", "{:.2f}".format(reward_multiplier), " "*(5-len(str("{:.2f}".format(reward_multiplier)))), " final rew:", "{:.2f}".format(reward * reward_multiplier), " "*(4-len(str("{:.2f}".format(reward * reward_multiplier)))), "   speed:", "{:.3f}".format(speed), "dist:", "{:.2f}".format(data[1]), "  extra:  ", "{:.2f}".format(data[5]), "{:.2f}".format(data[6]), data[7], data[9], "{:.2f}".format(data[10]))
 
         self.prev_data = data
         
-        return reward, terminated
+        return reward * reward_multiplier, terminated
 
     def reset(self):
         """
