@@ -235,12 +235,12 @@ class RewardFunction:
                     terminated = True
                     continue
                 elif ((speed / self.prev_data[0]) < 0.87) or ((speed / self.prev_data[0]) < 0.98 and not braking): # minor collision
-                    collided = True
                     print("MINOR COLLISION TYPE 1")
+                    collided = True
                     reward_multiplier -= 0.7
                     self.minor_collision_counter += 1
             
-            if not collided and speed > 1 and self.prev_data[0] > 5:
+            if not collided and speed > 0 and self.prev_data[0] > 5:
                 if (speed / self.prev_data[0]) < 0.6:
                     print("MAJOR COLLISION TYPE 2 - RUN TERMINATED")
                     collided = True
@@ -254,8 +254,8 @@ class RewardFunction:
                     self.minor_collision_counter += 1
 
             if not collided and rpm > 9000 and displacement < 0.8 and not braking:
-                collided = True
                 print("MINOR COLLISION TYPE 3")
+                collided = True
                 reward_multiplier -= 0.7
                 self.minor_collision_counter += 1
 
@@ -265,11 +265,12 @@ class RewardFunction:
                 continue
 
             if reward == 0:
-                reward = 10
                 if 0 < reward_multiplier < 1:
+                    reward = 10
                     reward_multiplier = 1 - reward_multiplier
                     reward_multiplier *= -1
                 elif reward_multiplier < 0:
+                    reward = 10
                     reward_multiplier -= 1
         
         #print(data[5], data[6], data[7], data[9], data[10])
