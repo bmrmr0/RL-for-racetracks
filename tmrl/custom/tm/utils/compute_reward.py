@@ -144,6 +144,7 @@ class RewardFunction:
         temp = self.nb_obs_forward  # counter used to find cuts
         best_index = 0  # index best matching the target pos
 
+        collided = False
         reward = 0
         reward_multiplier = 1
 
@@ -207,52 +208,69 @@ class RewardFunction:
 
         self.cur_idx = best_index  # finally, we save our new best matching index
 
-
         # if not going fast enough after some initial steps, apply penalty to encourage going fast
         if self.step_counter > self.nb_steps_before_speed_penalty:
             if speed < self.max_speed_for_penalty:
                 reward_multiplier -= 0.6
             elif speed > self.min_speed_for_reward:
                 reward_multiplier += 0.5
+        
+        # for loop so i can skip stuff using continue
+        for _ in "_":
 
-        # enigne gear 0 is R and neither pressing gas or braking. these give big penalty because it should never go backwards or stay still, and should be discouraged
-        if (gear == 0) or not (accelerating or braking):
-            reward_multiplier -= 0.8
-
-        # sudden loss of speed without braking indicates a collision and should be discouraged
-        if speed > 0 and self.prev_data[0] > 30:
-            if (speed / self.prev_data[0]) < 0.63: # major collision, even with braking
-                print("MAJOR COLLISION - RUN TERMINATED")
+            # enigne gear 0 is R. this gives big penalty because it should never go backwards, and should be discouraged
+            if (gear == 0):
+                print("GOING BACKWARDS - RUN TERMINATED")
+                collided = True
                 reward = -20
                 terminated = True
-            elif ((speed / self.prev_data[0]) < 0.87) or ((speed / self.prev_data[0]) < 0.98 and not braking): # minor collision
-                print("MINOR COLLISION")
+                continue
+
+            # sudden loss of speed without braking indicates a collision and should be discouraged
+            if not collided and speed > 0 and self.prev_data[0] > 30:
+                if (speed / self.prev_data[0]) < 0.63: # major collision, even with braking
+                    print("MAJOR COLLISION TYPE 1 - RUN TERMINATED")
+                    collided = True
+                    reward = -20
+                    terminated = True
+                    continue
+                elif ((speed / self.prev_data[0]) < 0.87) or ((speed / self.prev_data[0]) < 0.98 and not braking): # minor collision
+                    collided = True
+                    print("MINOR COLLISION TYPE 1")
+                    reward_multiplier -= 0.7
+                    self.minor_collision_counter += 1
+            
+            if not collided and speed > 1 and self.prev_data[0] > 5:
+                if (speed / self.prev_data[0]) < 0.6:
+                    print("MAJOR COLLISION TYPE 2 - RUN TERMINATED")
+                    collided = True
+                    reward = -20
+                    terminated = True
+                    continue
+                elif (speed / self.prev_data[0]) < 0.8 and not braking:
+                    print("MINOR COLLISION TYPE 2")
+                    collided = True
+                    reward_multiplier -= 0.7
+                    self.minor_collision_counter += 1
+
+            if not collided and rpm > 9000 and displacement < 0.8 and not braking:
+                collided = True
+                print("MINOR COLLISION TYPE 3")
                 reward_multiplier -= 0.7
                 self.minor_collision_counter += 1
 
-        elif speed > 1 and self.prev_data[0] > 1 and not braking and (speed / self.prev_data[0]) < 0.8:
-            print("MINOR COLLISION")
-            reward_multiplier -= 0.7
-            self.minor_collision_counter += 1
+            if self.minor_collision_counter > 10:
+                reward = -20
+                terminated = True
+                continue
 
-        elif rpm > 10000 and displacement < 0.8 and not braking:
-            print("MINOR COLLISION")
-            reward_multiplier -= 0.7
-            self.minor_collision_counter += 1
-    
-        #if reward_multiplier < 0:
-        #    reward_multiplier = 0
-        if self.minor_collision_counter > 10:
-            reward = -20
-            terminated = True
-
-        if reward == 0:
-            reward = 10
-            if 0 < reward_multiplier < 1:
-                reward_multiplier = 1 - reward_multiplier
-                reward_multiplier *= -1
-            elif reward_multiplier < 0:
-                reward_multiplier -= 1
+            if reward == 0:
+                reward = 10
+                if 0 < reward_multiplier < 1:
+                    reward_multiplier = 1 - reward_multiplier
+                    reward_multiplier *= -1
+                elif reward_multiplier < 0:
+                    reward_multiplier -= 1
         
         #print(data[5], data[6], data[7], data[9], data[10])
         datatosend = {
