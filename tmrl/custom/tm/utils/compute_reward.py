@@ -234,7 +234,7 @@ class RewardFunction:
                     reward = -20
                     terminated = True
                     continue
-                elif ((speed / self.prev_data[0]) < 0.87) or ((speed / self.prev_data[0]) < 0.98 and not braking): # minor collision
+                elif ((speed / self.prev_data[0]) < 0.87) or ((speed / self.prev_data[0]) < 0.98 and not braking and not self.prev_data[7]): # minor collision
                     print("MINOR COLLISION TYPE 1")
                     collided = True
                     reward_multiplier -= 0.7

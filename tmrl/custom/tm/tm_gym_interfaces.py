@@ -325,7 +325,7 @@ class TM2020InterfaceLidar(TM2020Interface):
         obs must be a list of numpy arrays
         """
         img, speed, data = self.grab_lidar_speed_and_data()
-        rew, terminated = self.reward_function.compute_reward(pos=np.array([data[2], data[3], data[4]]))
+        rew, terminated = self.reward_function.compute_reward(pos=np.array([data[2], data[3], data[4]]), data=data)
         self.img_hist.append(img)
         imgs = np.array(list(self.img_hist), dtype='float32')
         obs = [speed, imgs]
