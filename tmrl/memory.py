@@ -72,8 +72,10 @@ class Memory(ABC):
 
         # init memory
         self.path = Path(dataset_path)
+        print(self.path)
         logging.debug(f"Memory self.path:{self.path}")
         if os.path.isfile(self.path / 'data.pkl'):
+            print("loading memory")
             with open(self.path / 'data.pkl', 'rb') as f:
                 self.data = list(pickle.load(f))
         else:

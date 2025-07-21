@@ -72,6 +72,7 @@ class TrainingOffline:
         buffer = interface.retrieve_buffer()
         self.memory.append(buffer)
         self.total_samples += len(buffer)
+        print(self.total_samples)
 
     def check_ratio(self, interface):
         ratio = self.total_updates / self.total_samples if self.total_samples > 0.0 and self.total_samples >= self.start_training else -1.0

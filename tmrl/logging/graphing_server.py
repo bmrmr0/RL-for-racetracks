@@ -8,7 +8,7 @@ import threading
 
 PORT = 6789
 MAX_POINTS = 100
-VARIABLES = ["speed", "distance", "displacement", "gas", "braking", "input steer", "gear", "rpm", "reward"]
+VARIABLES = ["speed", "distance", "displacement", "gas", "braking", "input steer", "gear", "rpm", "reward", "collision"]
 
 data = defaultdict(lambda: deque(maxlen=MAX_POINTS))
 last_data = defaultdict(lambda: None)

@@ -10,6 +10,23 @@ import logging
 import asyncio
 
 class RewardFunction:
+
+    def resetvars(self):
+
+        self.cur_idx = 0
+        self.step_counter = 0
+        self.failure_counter = 0
+
+        self.prev_data = []
+        self.minor_collision_counter = 0
+        self.allowminor1 = True
+        self.allowminor3 = True
+        self.last_gear_increase = 0
+        self.last_rpm_increase = 0
+        self.last_collision = 0
+        self.prev_track_reward = 0
+        
+    
     """
     Computes a reward from the Openplanet API for Trackmania 2020.
     """
@@ -37,30 +54,26 @@ class RewardFunction:
         """
         if not os.path.exists(reward_data_path):
             logging.debug(f" reward not found at path:{reward_data_path}")
-            self.data = np.array([[0.0, 0.0, 0.0], [1.0, 1.0, 1.0]])  # dummy reward
+            self.pathdata = np.array([[0.0, 0.0, 0.0], [1.0, 1.0, 1.0]])  # dummy reward
         else:
             with open(reward_data_path, 'rb') as f:
-                self.data = pickle.load(f)
+                self.pathdata = pickle.load(f)
 
-        self.cur_idx = 0
         self.nb_obs_forward = nb_obs_forward
         self.nb_obs_backward = nb_obs_backward
         self.nb_zero_rew_before_failure = nb_zero_rew_before_failure
         self.min_nb_steps_before_failure = min_nb_steps_before_failure
         self.max_dist_from_traj = max_dist_from_traj
-        self.step_counter = 0
-        self.failure_counter = 0
-        self.datalen = len(self.data)
+
+        self.pathdatalen = len(self.pathdata)
 
         self.nb_steps_before_speed_penalty = nb_steps_before_speed_penalty
         self.max_speed_for_penalty = max_speed_for_penalty
         self.min_speed_for_reward = min_speed_for_reward
-        self.prev_data = []
         self.ws_client = ws_client
-        self.minor_collision_counter = 0
 
-        # self.traj = []
-
+        self.resetvars()
+        
     def compute_reward(self, pos):
         """
         Computes the current reward given the position pos
@@ -79,7 +92,7 @@ class RewardFunction:
         best_index = 0  # index best matching the target pos
 
         while True:
-            dist = np.linalg.norm(pos - self.data[index])  # distance of the current index to target pos
+            dist = np.linalg.norm(pos - self.pathdata[index])  # distance of the current index to target pos
             if dist <= min_dist:  # if dist is smaller than our minimum found distance so far,
                 min_dist = dist  # then we found a new best distance,
                 best_index = index  # and a new best index
@@ -87,7 +100,7 @@ class RewardFunction:
             index += 1  # now we will evaluate the next index in the trajectory
             temp -= 1  # so we can decrease the counter for cuts
             # stop condition
-            if index >= self.datalen or temp <= 0:  # if trajectory complete or cuts counter depleted
+            if index >= self.pathdatalen or temp <= 0:  # if trajectory complete or cuts counter depleted
                 # We check that we are not too far from the demo trajectory:
                 if min_dist > self.max_dist_from_traj:
                     best_index = self.cur_idx  # if so, consider we didn't move
@@ -103,7 +116,7 @@ class RewardFunction:
 
             # Find the best matching index in rewind:
             while True:
-                dist = np.linalg.norm(pos - self.data[index])
+                dist = np.linalg.norm(pos - self.pathdata[index])
                 if dist <= min_dist:
                     min_dist = dist
                     best_index = index
@@ -145,12 +158,15 @@ class RewardFunction:
         best_index = 0  # index best matching the target pos
 
         collided = False
+        collision_type = 0
         reward = 0
         reward_multiplier = 1
 
         distance = data[1]
         speed = data[0]
-        accelerating = True if data[6] > 0.02 else False
+        steer = data[5]
+        gas = data[6]
+        accelerating = True if gas > 0.02 else False
         braking = True if data[7] == 1 else False
         gear = data[9]
         rpm = data[10]
@@ -161,8 +177,27 @@ class RewardFunction:
         else:
             displacement = distance - self.prev_data[1]
 
+        prev_speed = self.prev_data[0]
+        prev_steer = self.prev_data[5]
+        prev_accelerating = True if self.prev_data[6] > 0.02 else False
+        prev_braking = self.prev_data[7]
+        prev_gear = self.prev_data[9]
+        prev_rpm = self.prev_data[10]
+
+        gear_increase = gear > prev_gear
+
+        if speed > prev_speed:
+            self.allowminor1 = True
+        
+        if gear > prev_gear:
+            self.last_gear_increase = self.step_counter
+        
+        if rpm > prev_rpm:
+            self.last_rpm_increase = self.step_counter
+            self.allowminor3 = True
+
         while True:
-            dist = np.linalg.norm(pos - self.data[index])  # distance of the current index to target pos
+            dist = np.linalg.norm(pos - self.pathdata[index])  # distance of the current index to target pos
             if dist <= min_dist:  # if dist is smaller than our minimum found distance so far,
                 min_dist = dist  # then we found a new best distance,
                 best_index = index  # and a new best index
@@ -170,7 +205,7 @@ class RewardFunction:
             index += 1  # now we will evaluate the next index in the trajectory
             temp -= 1  # so we can decrease the counter for cuts
             # stop condition
-            if index >= self.datalen or temp <= 0:  # if trajectory complete or cuts counter depleted
+            if index >= self.pathdatalen or temp <= 0:  # if trajectory complete or cuts counter depleted
                 # We check that we are not too far from the demo trajectory:
                 if min_dist > self.max_dist_from_traj:
                     best_index = self.cur_idx  # if so, consider we didn't move
@@ -178,7 +213,9 @@ class RewardFunction:
                 break  # we found the best index and can break the while loop
 
         # The reward is then proportional to the number of passed indexes (i.e., track distance):
-        reward += (best_index - self.cur_idx)
+        track_reward = (best_index - self.cur_idx)
+
+        reward += track_reward
 
         if best_index == self.cur_idx:  # if the best index didn't change, we rewind (more Markovian reward)
             min_dist = np.inf
@@ -186,7 +223,7 @@ class RewardFunction:
 
             # Find the best matching index in rewind:
             while True:
-                dist = np.linalg.norm(pos - self.data[index])
+                dist = np.linalg.norm(pos - self.pathdata[index])
                 if dist <= min_dist:
                     min_dist = dist
                     best_index = index
@@ -225,69 +262,129 @@ class RewardFunction:
                 reward = -20
                 terminated = True
                 continue
-
-            # sudden loss of speed without braking indicates a collision and should be discouraged
-            if not collided and speed > 0 and self.prev_data[0] > 30:
-                if (speed / self.prev_data[0]) < 0.63: # major collision, even with braking
-                    print("MAJOR COLLISION TYPE 1 - RUN TERMINATED")
-                    collided = True
-                    reward = -20
-                    terminated = True
-                    continue
-                elif ((speed / self.prev_data[0]) < 0.87) or ((speed / self.prev_data[0]) < 0.98 and not braking and not self.prev_data[7]): # minor collision
-                    print("MINOR COLLISION TYPE 1")
-                    collided = True
-                    reward_multiplier -= 0.7
-                    self.minor_collision_counter += 1
             
-            if not collided and speed > 0 and self.prev_data[0] > 5:
-                if (speed / self.prev_data[0]) < 0.6:
-                    print("MAJOR COLLISION TYPE 2 - RUN TERMINATED")
+            if not collided and self.step_counter - self.last_collision >= 5:
+            
+                # sudden loss of speed without braking or turning indicates a collision and should be discouraged
+                if speed > 0 and prev_speed > 5:
+                    if (speed / prev_speed) < 0.63:
+                        print("MAJOR COLLISION TYPE 1 - RUN TERMINATED")
+                        collided = True
+                        reward = -30
+                        terminated = True
+                        collision_type = 11
+                        continue
+                    elif (speed / prev_speed) < 0.75 and accelerating and not braking and not prev_braking:
+                        print("MAJOR COLLISION TYPE 2 - RUN TERMINATED")
+                        collided = True
+                        reward = -30
+                        terminated = True
+                        collision_type = 12
+                        continue
+                    elif self.allowminor1 and (speed / prev_speed) < 0.98 and accelerating and not braking and not prev_braking and not (steer < -0.9 or steer > 0.9) and not (prev_steer < -0.9 or prev_steer > 0.9):
+                        print("MINOR COLLISION TYPE 1")
+                        collided = True
+                        reward_multiplier -= (0.7 + self.minor_collision_counter * 0.01)
+                        self.minor_collision_counter += 1
+                        self.allowminor1 = False
+                        collision_type = 1
+                        continue
+                    elif (speed / prev_speed) < 0.85 and not braking:
+                        print("MINOR COLLISION TYPE 2")
+                        collided = True
+                        reward_multiplier -= (0.7 + self.minor_collision_counter * 0.01)
+                        self.minor_collision_counter += 1
+                        collision_type = 2
+                        continue
+                    elif self.allowminor3 and (speed / prev_speed) < 0.98 and (rpm / prev_rpm) < 0.98 and not gear_increase and (self.last_rpm_increase - self.last_gear_increase) >= 4 and accelerating and prev_accelerating and not braking:
+                        print("MINOR COLLISION TYPE 3")
+                        collided = True
+                        reward_multiplier -= (0.7 + self.minor_collision_counter * 0.01)
+                        self.minor_collision_counter += 1
+                        self.allowminor3 = False
+                        collision_type = 3
+                        continue
+                    elif track_reward > 0 and self.prev_track_reward > 0 and 0.2 < (track_reward / self.prev_track_reward) < 0.4 and accelerating and (speed < prev_speed) and (rpm / prev_rpm) < 0.9 and not gear_increase and self.last_gear_increase < self.last_rpm_increase:
+                        print("MINOR COLLISION TYPE 5")
+                        collided = True
+                        reward_multiplier -= (0.7 + self.minor_collision_counter * 0.01)
+                        self.minor_collision_counter += 1
+                        self.allowminor3 = False
+                        collision_type = 5
+                        continue
+                
+                """
+                if not collided and speed > 0 and prev_speed > 30:
+                    if ((speed / prev_speed) < 0.87) or ((speed / prev_speed) < 0.98 and not braking and not self.prev_data[7] and not (steer < -0.9 or steer > 0.9)):
+                        print("MINOR COLLISION TYPE 1")
+                        collided = True
+                        reward_multiplier -= 0.8
+                        self.minor_collision_counter += 1
+                
+                if not collided and speed > 0 and prev_speed > 5:
+                    if (speed / prev_speed) < 0.63:
+                        print("MAJOR COLLISION TYPE 1 - RUN TERMINATED")
+                        collided = True
+                        reward = -30
+                        terminated = True
+                        continue
+                    elif (speed / prev_speed) < 0.85 and not braking:
+                        print("MINOR COLLISION TYPE 2")
+                        collided = True
+                        reward_multiplier -= 0.7
+                        self.minor_collision_counter += 1
+
+                """
+
+                if rpm > 9000 and displacement < 0.8 and not braking:
+                    print("MINOR COLLISION TYPE 4")
                     collided = True
-                    reward = -20
-                    terminated = True
-                    continue
-                elif (speed / self.prev_data[0]) < 0.8 and not braking:
-                    print("MINOR COLLISION TYPE 2")
-                    collided = True
-                    reward_multiplier -= 0.7
+                    reward_multiplier -= (0.7 + self.minor_collision_counter * 0.01)
                     self.minor_collision_counter += 1
+                    collision_type = 4
+                    continue
 
-            if not collided and rpm > 9000 and displacement < 0.8 and not braking:
-                print("MINOR COLLISION TYPE 3")
-                collided = True
-                reward_multiplier -= 0.7
-                self.minor_collision_counter += 1
+        if not terminated and self.minor_collision_counter >= 10:
+            reward = -20
+            terminated = True
+        
+        if collided:
+            self.last_collision = self.step_counter
+            self.allowminor3 = False
 
-            if self.minor_collision_counter > 10:
-                reward = -20
-                terminated = True
-                continue
+        self.prev_track_reward = track_reward
 
-            if reward == 0:
-                if 0 < reward_multiplier < 1:
-                    reward = 10
-                    reward_multiplier = 1 - reward_multiplier
-                    reward_multiplier *= -1
-                elif reward_multiplier < 0:
-                    reward = 10
-                    reward_multiplier -= 1
+        if reward == 0:
+            if 0 < reward_multiplier < 1:
+                reward = 10
+                reward_multiplier = 1 - reward_multiplier
+                reward_multiplier *= -1
+            elif reward_multiplier < 0:
+                reward = 10
+                reward_multiplier -= 1
+        elif reward < 0:
+            if 0 < reward_multiplier < 1:
+                reward += 1
+            elif reward_multiplier < 0:
+                reward_multiplier -= 1
+                reward_multiplier *= -1
         
         #print(data[5], data[6], data[7], data[9], data[10])
         datatosend = {
             "speed": speed,
             "distance": distance,
             "displacement": displacement,
-            "gas": data[6],
+            "gas": gas,
             "braking": braking,
-            "input steer": data[5],
+            "input steer": steer,
             "gear": gear,
             "rpm": rpm,
-            "reward": reward * reward_multiplier
+            "reward": reward * reward_multiplier,
+            "collision": collision_type
         }
         self.ws_client.send_sync(datatosend)
 
-        print("step:", self.step_counter, " "*(4-len(str(self.step_counter))), "raw rew:", reward, " "*(3-len(str(reward))), "mult:", "{:.2f}".format(reward_multiplier), " "*(5-len(str("{:.2f}".format(reward_multiplier)))), " final rew:", "{:.2f}".format(reward * reward_multiplier), " "*(4-len(str("{:.2f}".format(reward * reward_multiplier)))), "   speed:", "{:.3f}".format(speed), "dist:", "{:.2f}".format(distance), "displ:", "{:.2f}".format(displacement), "  extra:  ", "{:.2f}".format(data[5]), "{:.2f}".format(data[6]), data[7], data[9], "{:.2f}".format(data[10]))
+        print("step:", self.step_counter, " "*(4-len(str(self.step_counter))), "raw rew:", reward, " "*(3-len(str(reward))), "mult:", "{:.2f}".format(reward_multiplier), " "*(5-len(str("{:.2f}".format(reward_multiplier)))), " final rew:", "{:.2f}".format(reward * reward_multiplier), " "*(4-len(str("{:.2f}".format(reward * reward_multiplier)))), "   speed:", "{:.3f}".format(speed), "dist:", "{:.2f}".format(distance), "displ:", "{:.2f}".format(displacement), "  extra:  ", "{:.2f}".format(data[5]), "{:.2f}".format(data[6]), data[7], data[9], "{:.2f}".format(data[10]), "se:", self.last_gear_increase , self.last_rpm_increase)
 
         self.prev_data = data
         
@@ -307,5 +404,4 @@ class RewardFunction:
         self.step_counter = 0
         self.failure_counter = 0
 
-        self.minor_collision_counter = 0
-        self.prev_data = []
+        self.resetvars()

@@ -112,6 +112,9 @@ class TM2020Interface(RealTimeGymInterface):
         self.ws_client.start()
         print("[Graphing Client] Connected to the graphing server")
 
+        # additional initializations
+        self.race_finished = False
+
         # tmrl initialization
         if self.gamepad:
             import vgamepad as vg
@@ -220,10 +223,12 @@ class TM2020Interface(RealTimeGymInterface):
         The agent stays 'paused', waiting in position
         """
         self.send_control(self.get_default_action())
-        if self.save_replays:
+        if self.save_replays and self.race_finished:
+            print("Saving replay...")
             save_ghost()
             time.sleep(1.0)
         self.reset_race()
+        self.race_finished = False
         time.sleep(0.5)
         self.close_finish_pop_up_tm20()
 
@@ -288,6 +293,7 @@ class TM2020Interface(RealTimeGymInterface):
 class TM2020InterfaceLidar(TM2020Interface):
     def __init__(self, img_hist_len=1, gamepad=False, save_replays: bool = False):
         super().__init__(img_hist_len, gamepad, save_replays)
+        print(img_hist_len, gamepad, save_replays)
         self.window_interface = None
         self.lidar = None
 
@@ -373,13 +379,14 @@ class TM2020InterfaceLidarProgress(TM2020InterfaceLidar):
         """
         img, speed, data = self.grab_lidar_speed_and_data()
         rew, terminated = self.reward_function.compute_reward(pos=np.array([data[2], data[3], data[4]]), data=data)
-        progress = np.array([self.reward_function.cur_idx / self.reward_function.datalen], dtype='float32')
+        progress = np.array([self.reward_function.cur_idx / self.reward_function.pathdatalen], dtype='float32')
         self.img_hist.append(img)
         imgs = np.array(list(self.img_hist), dtype='float32')
         obs = [speed, progress, imgs]
         end_of_track = bool(data[8])
         info = {}
         if end_of_track:
+            self.race_finished = True
             rew += self.finish_reward
             terminated = True
         rew += self.constant_penalty

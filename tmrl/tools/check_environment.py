@@ -24,7 +24,7 @@ def check_env_tm20lidar():
     o, i = env.reset()
     while True:
         o, r, d, t, i = env.step(None)
-        logging.info(f"r:{r}, d:{d}, t:{t}")
+        #logging.info(f"r:{r}, d:{d}, t:{t}")
         if d or t:
             o, i = env.reset()
         img = window_interface.screenshot()[:, :, :3]
