@@ -267,7 +267,7 @@ class RewardFunction:
             
                 # sudden loss of speed without braking or turning indicates a collision and should be discouraged
                 if speed > 0 and prev_speed > 5:
-                    if (speed / prev_speed) < 0.63:
+                    if (speed / prev_speed) < 0.7 and prev_speed > 20:
                         print("MAJOR COLLISION TYPE 1 - RUN TERMINATED")
                         collided = True
                         reward = -30
