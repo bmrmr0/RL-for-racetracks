@@ -40,7 +40,8 @@ class RewardFunction:
                  max_dist_from_traj=60.0,
                  nb_steps_before_speed_penalty=20,
                  max_speed_for_penalty=10,
-                 min_speed_for_reward=40):
+                 min_speed_for_reward=40,
+                 terminate_after_minors=1):
         """
         Instantiates a reward function for TM2020.
 
@@ -67,10 +68,11 @@ class RewardFunction:
 
         self.pathdatalen = len(self.pathdata)
 
+        self.ws_client = ws_client
         self.nb_steps_before_speed_penalty = nb_steps_before_speed_penalty
         self.max_speed_for_penalty = max_speed_for_penalty
         self.min_speed_for_reward = min_speed_for_reward
-        self.ws_client = ws_client
+        self.terminate_after_minors = terminate_after_minors
 
         self.resetvars()
         
@@ -296,7 +298,7 @@ class RewardFunction:
                         self.minor_collision_counter += 1
                         collision_type = 2
                         continue
-                    elif self.allowminor3 and (speed / prev_speed) < 0.98 and (rpm / prev_rpm) < 0.98 and not gear_increase and (self.last_rpm_increase - self.last_gear_increase) >= 4 and accelerating and prev_accelerating and not braking:
+                    elif self.allowminor3 and (speed / prev_speed) < 0.98 and (rpm / prev_rpm) < 0.98 and not gear_increase and (self.last_rpm_increase - self.last_gear_increase) >= 4 and accelerating and prev_accelerating and not braking and not prev_braking:
                         print("MINOR COLLISION TYPE 3")
                         collided = True
                         reward_multiplier -= (0.7 + self.minor_collision_counter * 0.01)
@@ -344,7 +346,8 @@ class RewardFunction:
                     collision_type = 4
                     continue
 
-        if not terminated and self.minor_collision_counter >= 10:
+        if not terminated and self.minor_collision_counter >= self.terminate_after_minors:
+            print(f"MINOR COLLISION LIMIT {self.terminate_after_minors} REACHED - RUN TERMINATED")
             reward = -20
             terminated = True
         
@@ -364,7 +367,7 @@ class RewardFunction:
                 reward_multiplier -= 1
         elif reward < 0:
             if 0 < reward_multiplier < 1:
-                reward += 1
+                reward_multiplier += 1
             elif reward_multiplier < 0:
                 reward_multiplier -= 1
                 reward_multiplier *= -1
