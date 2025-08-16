@@ -340,8 +340,6 @@ class REDQSACAgent(TrainingAgent):
         else:
             self.alpha_t = torch.tensor(float(self.alpha)).to(self.device)
 
-        print(f"TARGET_ENTROPY: {target_entropy}")
-        
     def get_actor(self):
         return self.model_nograd.actor
 

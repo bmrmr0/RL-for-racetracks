@@ -132,7 +132,7 @@ else:
         gamma=ALG_CONFIG["GAMMA"],
         polyak=ALG_CONFIG["POLYAK"],
         learn_entropy_coef=ALG_CONFIG["LEARN_ENTROPY_COEF"],  # False for SAC v2 with no temperature autotuning
-        target_entropy=ALG_CONFIG["TARGET_ENTROPY"] if ALG_CONFIG["TARGET_ENTROPY"] != 0 else None,  # None for automatic
+        target_entropy=ALG_CONFIG["TARGET_ENTROPY"],  # None for automatic
         alpha=ALG_CONFIG["ALPHA"],  # inverse of reward scale
         n=ALG_CONFIG["REDQ_N"],  # number of Q networks
         m=ALG_CONFIG["REDQ_M"],  # number of Q targets
