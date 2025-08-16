@@ -168,8 +168,8 @@ class RewardFunction:
         speed = data[0]
         steer = data[5]
         gas = data[6]
-        accelerating = True if gas > 0.02 else False
-        braking = True if data[7] == 1 else False
+        accelerating = gas > 0.02
+        braking = data[7] == 1
         gear = data[9]
         rpm = data[10]
 

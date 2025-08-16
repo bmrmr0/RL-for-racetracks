@@ -37,6 +37,12 @@ from tmrl.custom.tm.utils.control_keyboard import apply_control, keyres
 from tmrl.custom.tm.utils.window import WindowInterface
 from tmrl.custom.tm.utils.tools import Lidar, TM2020OpenPlanetClient, save_ghost
 
+
+from multiprocessing.connection import Client
+
+address = r'\\.\pipe\mypipe'
+
+
 # Interface for Trackmania 2020 ========================================================================================
 
 class TM2020Interface(RealTimeGymInterface):
@@ -297,6 +303,22 @@ class TM2020InterfaceLidar(TM2020Interface):
         self.window_interface = None
         self.lidar = None
 
+        self.resetgraphingdata()
+
+        print("Client connecting...")
+        self.conn = Client(address, family='AF_PIPE')
+        print("Client connected!")
+
+    def resetgraphingdata(self):
+        self.data_count = 0
+
+        self.average_speed = 0
+        self.max_speed = 0
+        self.average_distance = 0
+        self.max_distance = 0
+        self.braking_count = 0
+        self.acceleration_count = 0
+
     def grab_lidar_speed_and_data(self):
         img = self.window_interface.screenshot()[:, :, :3]
         data = self.client.retrieve_data()
@@ -391,6 +413,35 @@ class TM2020InterfaceLidarProgress(TM2020InterfaceLidar):
             terminated = True
         rew += self.constant_penalty
         rew = np.float32(rew)
+
+
+        distance = data[1]
+        speed = data[0]
+        steer = data[5]
+        gas = data[6]
+        accelerating = gas > 0.02
+        braking = data[7] == 1
+
+        self.data_count += 1
+
+        self.average_speed += (speed - self.average_speed) / self.data_count
+        self.average_distance += (distance - self.average_distance) / self.data_count
+        if speed > self.max_speed:
+            self.max_speed = speed
+        if distance > self.max_distance:
+            self.max_distance = distance
+        if braking:
+            self.braking_count += 1
+        if accelerating:
+            self.acceleration_count += 1
+
+        if self.conn.poll():
+            msg = self.conn.recv()
+            if msg == "datarequest":
+                braking_acceleration_ratio = self.braking_count / self.acceleration_count
+                self.conn.send([self.average_speed, self.max_speed, self.average_distance, self.max_distance, braking_acceleration_ratio])
+                self.resetgraphingdata()
+
         return obs, rew, terminated, info
 
     def get_observation_space(self):
