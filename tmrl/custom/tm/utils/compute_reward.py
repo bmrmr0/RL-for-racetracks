@@ -40,7 +40,7 @@ class RewardFunction:
                  max_dist_from_traj=60.0,
                  nb_steps_before_speed_penalty=20,
                  max_speed_for_penalty=10,
-                 min_speed_for_reward=40,
+                 speed_reward_mult_increase_dict={20:0.3,30:0.2,40:0.1,50:0.1,60:0.1,70:0.1},
                  terminate_after_minors=1):
         """
         Instantiates a reward function for TM2020.
@@ -71,7 +71,7 @@ class RewardFunction:
         self.ws_client = ws_client
         self.nb_steps_before_speed_penalty = nb_steps_before_speed_penalty
         self.max_speed_for_penalty = max_speed_for_penalty
-        self.min_speed_for_reward = min_speed_for_reward
+        self.speed_reward_mult_increase_dict = dict(sorted(speed_reward_mult_increase_dict.items()))
         self.terminate_after_minors = terminate_after_minors
 
         self.resetvars()
@@ -251,8 +251,12 @@ class RewardFunction:
         if self.step_counter > self.nb_steps_before_speed_penalty:
             if speed < self.max_speed_for_penalty:
                 reward_multiplier -= 0.6
-            elif speed > self.min_speed_for_reward:
-                reward_multiplier += 0.5
+            else:
+                for speed_thres, speed_rew_mult in self.speed_reward_mult_increase_dict.items():
+                    if speed >= speed_thres:
+                        reward_multiplier += speed_rew_mult
+                    else:
+                        break
         
         # for loop so i can skip stuff using continue
         for _ in "_":
