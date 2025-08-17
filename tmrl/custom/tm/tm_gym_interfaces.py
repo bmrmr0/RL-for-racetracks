@@ -438,9 +438,18 @@ class TM2020InterfaceLidarProgress(TM2020InterfaceLidar):
         if self.conn.poll():
             msg = self.conn.recv()
             if msg == "datarequest":
-                braking_acceleration_ratio = self.braking_count / self.acceleration_count
-                self.conn.send([self.average_speed, self.max_speed, self.average_distance, self.max_distance, braking_acceleration_ratio])
+                if self.braking_count == 0:
+                    if self.acceleration_count == 0:
+                        acceleration_braking_ratio = 0
+                    else:
+                        acceleration_braking_ratio = acceleration_count
+                else:
+                    acceleration_braking_ratio = self.acceleration_count / self.braking_count
+                self.conn.send([self.average_speed, self.max_speed, self.average_distance, self.max_distance, acceleration_braking_ratio])
+                print([self.average_speed, self.max_speed, self.average_distance, self.max_distance, acceleration_braking_ratio])
                 self.resetgraphingdata()
+                print("data reset")
+                print([self.average_speed, self.max_speed, self.average_distance, self.max_distance, acceleration_braking_ratio])
 
         return obs, rew, terminated, info
 

@@ -31,6 +31,8 @@ from multiprocessing.connection import Listener
 
 address = r'\\.\pipe\mypipe'
 
+conn = None
+listener = None
 
 # PRINT: ============================================
 
@@ -237,6 +239,13 @@ def dump_run_instance(run_instance, checkpoint_path):
     """
     dump(run_instance, checkpoint_path)
 
+def initiate_conn():
+    global conn, listener
+
+    listener = Listener(address, family='AF_PIPE')
+    print("Server waiting for a connection...")
+    conn = listener.accept()
+    print("Server connected:", listener.last_accepted)
 
 def iterate_epochs(run_cls,
                    interface: TrainerInterface,
@@ -273,7 +282,7 @@ def iterate_epochs(run_cls,
 
         while run_instance.epoch < run_instance.epochs:
             # time.sleep(1)  # on network file systems writing files is asynchronous and we need to wait for sync
-            yield run_instance.run_epoch(interface=interface, conn=self.conn)  # yield stats data frame (this makes this function a generator)
+            yield run_instance.run_epoch(interface=interface, conn=conn)  # yield stats data frame (this makes this function a generator)
             if run_instance.epoch % epochs_between_checkpoints == 0:
                 logging.info(f" saving checkpoint...")
                 t1 = time.time()
@@ -393,10 +402,7 @@ class Trainer:
                                           hostname=hostname,
                                           model_path=model_path)
 
-        self.listener = Listener(address, family='AF_PIPE')
-        print("Server waiting for a connection...")
-        self.conn = self.listener.accept()
-        print("Server connected:", self.listener.last_accepted)
+        initiate_conn()
 
     def run(self):
         """
