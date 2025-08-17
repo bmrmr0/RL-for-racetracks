@@ -318,6 +318,7 @@ class TM2020InterfaceLidar(TM2020Interface):
         self.max_distance = 0
         self.braking_count = 0
         self.acceleration_count = 0
+        self.track_completed = 0
 
     def grab_lidar_speed_and_data(self):
         img = self.window_interface.screenshot()[:, :, :3]
@@ -411,6 +412,7 @@ class TM2020InterfaceLidarProgress(TM2020InterfaceLidar):
             self.race_finished = True
             rew += self.finish_reward
             terminated = True
+            self.track_completed = 1
         rew += self.constant_penalty
         rew = np.float32(rew)
 
@@ -442,14 +444,14 @@ class TM2020InterfaceLidarProgress(TM2020InterfaceLidar):
                     if self.acceleration_count == 0:
                         acceleration_braking_ratio = 0
                     else:
-                        acceleration_braking_ratio = acceleration_count
+                        acceleration_braking_ratio = self.acceleration_count
                 else:
                     acceleration_braking_ratio = self.acceleration_count / self.braking_count
-                self.conn.send([self.average_speed, self.max_speed, self.average_distance, self.max_distance, acceleration_braking_ratio])
-                print([self.average_speed, self.max_speed, self.average_distance, self.max_distance, acceleration_braking_ratio])
+                self.conn.send([self.average_speed, self.max_speed, self.average_distance, self.max_distance, acceleration_braking_ratio, self.track_completed])
+                print([self.average_speed, self.max_speed, self.average_distance, self.max_distance, acceleration_braking_ratio, self.track_completed])
                 self.resetgraphingdata()
                 print("data reset")
-                print([self.average_speed, self.max_speed, self.average_distance, self.max_distance, acceleration_braking_ratio])
+                print([self.average_speed, self.max_speed, self.average_distance, self.max_distance, acceleration_braking_ratio, self.track_completed])
 
         return obs, rew, terminated, info
 

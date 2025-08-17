@@ -155,7 +155,7 @@ class TrainingOffline:
             conn.send("datarequest")
             incomingdata = conn.recv()
 
-            stats += pandas_dict(memory_len=len(self.memory), round_time=round_time, idle_time=idle_time, **DataFrame(stats_training).mean(skipna=True), average_speed=incomingdata[0], max_speed=incomingdata[1], average_distance=incomingdata[2], max_distance=incomingdata[3], acceleration_braking_ratio=incomingdata[4]),
+            stats += pandas_dict(memory_len=len(self.memory), round_time=round_time, idle_time=idle_time, **DataFrame(stats_training).mean(skipna=True), average_speed=incomingdata[0], max_speed=incomingdata[1], average_distance=incomingdata[2], max_distance=incomingdata[3], acceleration_braking_ratio=incomingdata[4], track_completed=incomingdata[5]),
 
             logging.info(stats[-1].add_prefix("  ").to_string() + '\n')
 
