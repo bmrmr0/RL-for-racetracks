@@ -28,5 +28,5 @@ class WebSocketClient:
         thread = threading.Thread(target=runner, daemon=True)
         thread.start()
 
-    def send_sync(self, data):
+    def send_async(self, data):
         asyncio.run_coroutine_threadsafe(self.send(data), self.loop)

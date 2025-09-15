@@ -24,7 +24,7 @@ class RewardFunction:
         self.last_gear_increase = 0
         self.last_rpm_increase = 0
         self.last_collision = 0
-        self.prev_track_reward = 0
+        self.prev_path_reward = 0
         
     
     """
@@ -161,8 +161,13 @@ class RewardFunction:
 
         collided = False
         collision_type = 0
-        reward = 0
-        reward_multiplier = 1
+        
+        path_reward = 0
+        path_reward_multiplier = 1
+        speed_reward = 0
+        speed_reward_multiplier = 1
+        collision_reward = 0
+        collision_reward_multiplier = 1
 
         distance = data[1]
         speed = data[0]
@@ -215,9 +220,9 @@ class RewardFunction:
                 break  # we found the best index and can break the while loop
 
         # The reward is then proportional to the number of passed indexes (i.e., track distance):
-        track_reward = (best_index - self.cur_idx)
+        path_reward = (best_index - self.cur_idx)
 
-        reward += track_reward
+        reward += path_reward
 
         if best_index == self.cur_idx:  # if the best index didn't change, we rewind (more Markovian reward)
             min_dist = np.inf
@@ -247,12 +252,14 @@ class RewardFunction:
 
         self.cur_idx = best_index  # finally, we save our new best matching index
 
+
+
         # if not going fast enough after some initial steps, apply penalty to encourage going fast
         if self.step_counter > self.nb_steps_before_speed_penalty:
             if speed < self.max_speed_for_penalty:
-                reward_multiplier -= 0.6
+                speed_reward_multiplier -= 0.6
             elif speed > self.min_speed_for_reward:
-                reward_multiplier += 0.5
+                speed_reward_multiplier += 0.5
         
         # for loop so i can skip stuff using continue
         for _ in "_":
@@ -261,7 +268,7 @@ class RewardFunction:
             if (gear == 0):
                 print("GOING BACKWARDS - RUN TERMINATED")
                 collided = True
-                reward = -20
+                speed_reward = -20
                 terminated = True
                 continue
             
@@ -272,21 +279,21 @@ class RewardFunction:
                     if (speed / prev_speed) < 0.7 and prev_speed > 20:
                         print("MAJOR COLLISION TYPE 1 - RUN TERMINATED")
                         collided = True
-                        reward = -30
+                        collision_reward = -30
                         terminated = True
                         collision_type = 11
                         continue
                     elif (speed / prev_speed) < 0.75 and accelerating and not braking and not prev_braking:
                         print("MAJOR COLLISION TYPE 2 - RUN TERMINATED")
                         collided = True
-                        reward = -30
+                        collision_reward = -30
                         terminated = True
                         collision_type = 12
                         continue
                     elif self.allowminor1 and (speed / prev_speed) < 0.98 and accelerating and not braking and not prev_braking and not (steer < -0.9 or steer > 0.9) and not (prev_steer < -0.9 or prev_steer > 0.9):
                         print("MINOR COLLISION TYPE 1")
                         collided = True
-                        reward_multiplier -= (0.7 + self.minor_collision_counter * 0.01)
+                        collision_reward_multiplier -= (0.7 + self.minor_collision_counter * 0.01)
                         self.minor_collision_counter += 1
                         self.allowminor1 = False
                         collision_type = 1
@@ -294,22 +301,22 @@ class RewardFunction:
                     elif (speed / prev_speed) < 0.85 and not braking:
                         print("MINOR COLLISION TYPE 2")
                         collided = True
-                        reward_multiplier -= (0.7 + self.minor_collision_counter * 0.01)
+                        collision_reward_multiplier -= (0.7 + self.minor_collision_counter * 0.01)
                         self.minor_collision_counter += 1
                         collision_type = 2
                         continue
                     elif self.allowminor3 and (speed / prev_speed) < 0.98 and (rpm / prev_rpm) < 0.98 and not gear_increase and (self.last_rpm_increase - self.last_gear_increase) >= 4 and accelerating and prev_accelerating and not braking and not prev_braking:
                         print("MINOR COLLISION TYPE 3")
                         collided = True
-                        reward_multiplier -= (0.7 + self.minor_collision_counter * 0.01)
+                        collision_reward_multiplier -= (0.7 + self.minor_collision_counter * 0.01)
                         self.minor_collision_counter += 1
                         self.allowminor3 = False
                         collision_type = 3
                         continue
-                    elif track_reward > 0 and self.prev_track_reward > 0 and 0.2 < (track_reward / self.prev_track_reward) < 0.4 and accelerating and (speed < prev_speed) and (rpm / prev_rpm) < 0.9 and not gear_increase and self.last_gear_increase < self.last_rpm_increase:
+                    elif path_reward > 0 and self.prev_path_reward > 0 and 0.2 < (path_reward / self.prev_path_reward) < 0.4 and accelerating and (speed < prev_speed) and (rpm / prev_rpm) < 0.9 and not gear_increase and self.last_gear_increase < self.last_rpm_increase:
                         print("MINOR COLLISION TYPE 5")
                         collided = True
-                        reward_multiplier -= (0.7 + self.minor_collision_counter * 0.01)
+                        collision_reward_multiplier -= (0.7 + self.minor_collision_counter * 0.01)
                         self.minor_collision_counter += 1
                         self.allowminor3 = False
                         collision_type = 5
@@ -335,28 +342,28 @@ class RewardFunction:
                         collided = True
                         reward_multiplier -= 0.7
                         self.minor_collision_counter += 1
-
                 """
 
                 if rpm > 9000 and displacement < 0.8 and not braking:
                     print("MINOR COLLISION TYPE 4")
                     collided = True
-                    reward_multiplier -= (0.7 + self.minor_collision_counter * 0.01)
+                    collision_reward_multiplier -= (0.7 + self.minor_collision_counter * 0.01)
                     self.minor_collision_counter += 1
                     collision_type = 4
                     continue
 
         if not terminated and self.minor_collision_counter >= self.terminate_after_minors:
             print(f"MINOR COLLISION LIMIT {self.terminate_after_minors} REACHED - RUN TERMINATED")
-            reward = -20
+            collision_reward = -20
             terminated = True
         
         if collided:
             self.last_collision = self.step_counter
             self.allowminor3 = False
 
-        self.prev_track_reward = track_reward
+        self.prev_path_reward = path_reward
 
+        """
         if reward == 0:
             if 0 < reward_multiplier < 1:
                 reward = 10
@@ -371,6 +378,7 @@ class RewardFunction:
             elif reward_multiplier < 0:
                 reward_multiplier -= 1
                 reward_multiplier *= -1
+        """
         
         #print(data[5], data[6], data[7], data[9], data[10])
         datatosend = {
@@ -385,7 +393,7 @@ class RewardFunction:
             "reward": reward * reward_multiplier,
             "collision": collision_type
         }
-        self.ws_client.send_sync(datatosend)
+        self.ws_client.send_async(datatosend)
 
         print("step:", self.step_counter, " "*(4-len(str(self.step_counter))), "raw rew:", reward, " "*(3-len(str(reward))), "mult:", "{:.2f}".format(reward_multiplier), " "*(5-len(str("{:.2f}".format(reward_multiplier)))), " final rew:", "{:.2f}".format(reward * reward_multiplier), " "*(4-len(str("{:.2f}".format(reward * reward_multiplier)))), "   speed:", "{:.3f}".format(speed), "dist:", "{:.2f}".format(distance), "displ:", "{:.2f}".format(displacement), "  extra:  ", "{:.2f}".format(data[5]), "{:.2f}".format(data[6]), data[7], data[9], "{:.2f}".format(data[10]), "se:", self.last_gear_increase , self.last_rpm_increase)
 
