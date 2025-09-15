@@ -9,6 +9,9 @@ import logging
 # asyncio for graph server connection
 import asyncio
 
+# math for some mathematical operations
+import math
+
 class RewardFunction:
 
     def resetvars(self):
@@ -203,6 +206,9 @@ class RewardFunction:
             self.last_rpm_increase = self.step_counter
             self.allowminor3 = True
 
+
+        ################# PATH REWARD FUNCTION #################
+
         while True:
             dist = np.linalg.norm(pos - self.pathdata[index])  # distance of the current index to target pos
             if dist <= min_dist:  # if dist is smaller than our minimum found distance so far,
@@ -221,8 +227,6 @@ class RewardFunction:
 
         # The reward is then proportional to the number of passed indexes (i.e., track distance):
         path_reward = (best_index - self.cur_idx)
-
-        reward += path_reward
 
         if best_index == self.cur_idx:  # if the best index didn't change, we rewind (more Markovian reward)
             min_dist = np.inf
@@ -253,6 +257,7 @@ class RewardFunction:
         self.cur_idx = best_index  # finally, we save our new best matching index
 
 
+        ################# SPEED REWARD FUNCTION #################
 
         # if not going fast enough after some initial steps, apply penalty to encourage going fast
         if self.step_counter > self.nb_steps_before_speed_penalty:
@@ -261,10 +266,14 @@ class RewardFunction:
             elif speed > self.min_speed_for_reward:
                 speed_reward_multiplier += 0.5
         
-        # for loop so i can skip stuff using continue
+        speed_reward = math.log(speed) * 10
+
+        ################# COLLISION REWARD FUNCTION #################
+
+        # for loop to skip using continue
         for _ in "_":
 
-            # enigne gear 0 is R. this gives big penalty because it should never go backwards, and should be discouraged
+            # enigne gear 0 is R. this gives a big penalty because it should never go backwards and should be discouraged
             if (gear == 0):
                 print("GOING BACKWARDS - RUN TERMINATED")
                 collided = True
@@ -379,6 +388,23 @@ class RewardFunction:
                 reward_multiplier -= 1
                 reward_multiplier *= -1
         """
+
+        ################# OVERALL REWARD FUNCTION #################
+
+        mode = 1
+
+        if mode == 1: # all rewards are considered
+            reward = path_reward * path_reward_multiplier + collision_reward * collision_reward_multiplier + speed_reward * speed_reward_multiplier
+        
+        elif mode == 2: # only path reward is considered, vanilla reward function
+            reward = path_reward * path_reward_multiplier
+
+        elif mode == 2: # path and speed rewards are considered
+            reward = path_reward * path_reward_multiplier + speed_reward * speed_reward_multiplier
+        
+        elif mode == 2: # path and collision rewards are considered
+            reward = path_reward * path_reward_multiplier + collision_reward * collision_reward_multiplier
+,
         
         #print(data[5], data[6], data[7], data[9], data[10])
         datatosend = {
@@ -390,16 +416,16 @@ class RewardFunction:
             "input steer": steer,
             "gear": gear,
             "rpm": rpm,
-            "reward": reward * reward_multiplier,
+            "reward": reward,
             "collision": collision_type
         }
         self.ws_client.send_async(datatosend)
 
-        print("step:", self.step_counter, " "*(4-len(str(self.step_counter))), "raw rew:", reward, " "*(3-len(str(reward))), "mult:", "{:.2f}".format(reward_multiplier), " "*(5-len(str("{:.2f}".format(reward_multiplier)))), " final rew:", "{:.2f}".format(reward * reward_multiplier), " "*(4-len(str("{:.2f}".format(reward * reward_multiplier)))), "   speed:", "{:.3f}".format(speed), "dist:", "{:.2f}".format(distance), "displ:", "{:.2f}".format(displacement), "  extra:  ", "{:.2f}".format(data[5]), "{:.2f}".format(data[6]), data[7], data[9], "{:.2f}".format(data[10]), "se:", self.last_gear_increase , self.last_rpm_increase)
+        print("step:", self.step_counter, " "*(4-len(str(self.step_counter))), "raw rew:", reward, " "*(3-len(str(reward))), "   speed:", "{:.3f}".format(speed), "dist:", "{:.2f}".format(distance), "displ:", "{:.2f}".format(displacement), "  extra:  ", "{:.2f}".format(data[5]), "{:.2f}".format(data[6]), data[7], data[9], "{:.2f}".format(data[10]), "se:", self.last_gear_increase , self.last_rpm_increase)
 
         self.prev_data = data
         
-        return reward * reward_multiplier, terminated
+        return reward, terminated
 
     def reset(self):
         """
