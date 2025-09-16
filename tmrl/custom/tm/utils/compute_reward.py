@@ -262,11 +262,12 @@ class RewardFunction:
         # if not going fast enough after some initial steps, apply penalty to encourage going fast
         if self.step_counter > self.nb_steps_before_speed_penalty:
             if speed < self.max_speed_for_penalty:
+                speed_reward = -10
                 speed_reward_multiplier -= 0.6
             elif speed > self.min_speed_for_reward:
-                speed_reward_multiplier += 0.5
-        
-        speed_reward = math.log(speed) * 10
+                speed_reward = math.log(max(speed, math.e)) * 5
+                #speed_reward_multiplier += 0.5
+       
 
         ################# COLLISION REWARD FUNCTION #################
 
@@ -389,12 +390,21 @@ class RewardFunction:
                 reward_multiplier *= -1
         """
 
+        if path_reward < 0:
+            path_reward_multiplier = 1.0 / max(path_reward_multiplier, 1e-9)
+
+        if speed_reward < 0:
+            speed_reward_multiplier = 1.0 / max(speed_reward_multiplier, 1e-9)
+
+        if collision_reward < 0:
+            collision_reward_multiplier = 1.0 / max(collision_reward_multiplier, 1e-9)
+
         ################# OVERALL REWARD FUNCTION #################
 
         mode = 1
 
         if mode == 1: # all rewards are considered
-            reward = path_reward * path_reward_multiplier + collision_reward * collision_reward_multiplier + speed_reward * speed_reward_multiplier
+            reward = path_reward * path_reward_multiplier + speed_reward * speed_reward_multiplier + collision_reward * collision_reward_multiplier
         
         elif mode == 2: # only path reward is considered, vanilla reward function
             reward = path_reward * path_reward_multiplier
@@ -404,7 +414,7 @@ class RewardFunction:
         
         elif mode == 2: # path and collision rewards are considered
             reward = path_reward * path_reward_multiplier + collision_reward * collision_reward_multiplier
-,
+
         
         #print(data[5], data[6], data[7], data[9], data[10])
         datatosend = {
@@ -421,7 +431,16 @@ class RewardFunction:
         }
         self.ws_client.send_async(datatosend)
 
-        print("step:", self.step_counter, " "*(4-len(str(self.step_counter))), "raw rew:", reward, " "*(3-len(str(reward))), "   speed:", "{:.3f}".format(speed), "dist:", "{:.2f}".format(distance), "displ:", "{:.2f}".format(displacement), "  extra:  ", "{:.2f}".format(data[5]), "{:.2f}".format(data[6]), data[7], data[9], "{:.2f}".format(data[10]), "se:", self.last_gear_increase , self.last_rpm_increase)
+        print("step:", self.step_counter, " "*(3-len(str(self.step_counter))), 
+        "Frew:", "{:.2f}".format(reward), " "*(3-len(str(reward))), 
+        "Prew:", "{:.2f}".format(path_reward * path_reward_multiplier), " "*(3-len(str(path_reward * path_reward_multiplier))), 
+        "Srew:", "{:.2f}".format(speed_reward * speed_reward_multiplier), " "*(3-len(str(speed_reward * speed_reward_multiplier))), 
+        "Crew:", "{:.2f}".format(collision_reward * collision_reward_multiplier), " "*(3-len(str(collision_reward * collision_reward_multiplier))), 
+        "  speed:", "{:.3f}".format(speed), 
+        "dist:", "{:.2f}".format(distance), 
+        "displ:", "{:.2f}".format(displacement), 
+        "  extra:  ", "{:.2f}".format(data[5]), "{:.2f}".format(data[6]), data[7], data[9], "{:.2f}".format(data[10]), 
+        "se:", self.last_gear_increase , self.last_rpm_increase)
 
         self.prev_data = data
         

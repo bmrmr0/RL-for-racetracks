@@ -303,13 +303,18 @@ class TM2020InterfaceLidar(TM2020Interface):
         self.window_interface = None
         self.lidar = None
 
-        self.resetgraphingdata()
+        self.resetwandbbuffer()
 
         print("Client connecting...")
-        self.conn = Client(address, family='AF_PIPE')
-        print("Client connected!")
+        try:
+            self.conn = Client(address, family='AF_PIPE')
+            print("Client connected!")
+        except:
+            print("CLIENT NOT CONNECTED TO TRAINER!!! WANDB WONT BE UPDATED")
 
-    def resetgraphingdata(self):
+        self.lastwandbbuffer = []
+
+    def resetwandbbuffer(self):
         self.data_count = 0
 
         self.average_speed = 0
@@ -319,6 +324,7 @@ class TM2020InterfaceLidar(TM2020Interface):
         self.braking_count = 0
         self.acceleration_count = 0
         self.track_completed = 0
+        self.terminated = False
 
     def grab_lidar_speed_and_data(self):
         img = self.window_interface.screenshot()[:, :, :3]
@@ -413,6 +419,8 @@ class TM2020InterfaceLidarProgress(TM2020InterfaceLidar):
             rew += self.finish_reward
             terminated = True
             self.track_completed = 1
+            
+        
         rew += self.constant_penalty
         rew = np.float32(rew)
 
@@ -436,23 +444,36 @@ class TM2020InterfaceLidarProgress(TM2020InterfaceLidar):
             self.braking_count += 1
         if accelerating:
             self.acceleration_count += 1
+    
+        self.terminated = terminated
+
+        print(self.terminated)
+
+        if self.terminated:
+            if self.braking_count == 0:
+                if self.acceleration_count == 0:
+                    acceleration_braking_ratio = 0
+                else:
+                    acceleration_braking_ratio = self.acceleration_count
+            else:
+                acceleration_braking_ratio = self.acceleration_count / self.braking_count
+            
+            self.lastwandbbuffer = [self.average_speed, self.max_speed, self.average_distance, self.max_distance, acceleration_braking_ratio, self.track_completed]
+            self.resetwandbbuffer()
 
         if self.conn.poll():
             msg = self.conn.recv()
             if msg == "datarequest":
-                if self.braking_count == 0:
-                    if self.acceleration_count == 0:
-                        acceleration_braking_ratio = 0
-                    else:
-                        acceleration_braking_ratio = self.acceleration_count
+                if len(self.lastwandbbuffer) > 0:
+                    self.conn.send(self.lastwandbbuffer)
+                    print(self.lastwandbbuffer)
+                    self.resetwandbbuffer()
+                    print("data reset")
+                    self.lastwandbbuffer = []
+                    print(self.lastwandbbuffer)
                 else:
-                    acceleration_braking_ratio = self.acceleration_count / self.braking_count
-                self.conn.send([self.average_speed, self.max_speed, self.average_distance, self.max_distance, acceleration_braking_ratio, self.track_completed])
-                print([self.average_speed, self.max_speed, self.average_distance, self.max_distance, acceleration_braking_ratio, self.track_completed])
-                self.resetgraphingdata()
-                print("data reset")
-                print([self.average_speed, self.max_speed, self.average_distance, self.max_distance, acceleration_braking_ratio, self.track_completed])
-
+                    self.conn.send("track not reset, not updating wandb")
+        
         return obs, rew, terminated, info
 
     def get_observation_space(self):

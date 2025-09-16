@@ -152,10 +152,22 @@ class TrainingOffline:
             train_time = t3 - t2
             logging.debug(f"round_time:{round_time}, idle_time:{idle_time}, update_buf_time:{update_buf_time}, train_time:{train_time}")
 
+            print("requesting the last completed run's stats from the worker")
+
             conn.send("datarequest")
             incomingdata = conn.recv()
+            
+            print(incomingdata)
+            #print(stats)
 
-            stats += pandas_dict(memory_len=len(self.memory), round_time=round_time, idle_time=idle_time, **DataFrame(stats_training).mean(skipna=True), average_speed=incomingdata[0], max_speed=incomingdata[1], average_distance=incomingdata[2], max_distance=incomingdata[3], acceleration_braking_ratio=incomingdata[4], track_completed=incomingdata[5]),
+            if type(incomingdata) is str:
+                print("type 1")
+                stats.append(pandas_dict(memory_len=len(self.memory), round_time=round_time, idle_time=idle_time, **DataFrame(stats_training).mean(skipna=True)))
+            else:
+                print("type 2")
+                stats.append(pandas_dict(memory_len=len(self.memory), round_time=round_time, idle_time=idle_time, **DataFrame(stats_training).mean(skipna=True), average_speed=incomingdata[0], max_speed=incomingdata[1], average_distance=incomingdata[2], max_distance=incomingdata[3], acceleration_braking_ratio=incomingdata[4], track_completed=incomingdata[5]))
+
+            #print(stats)
 
             logging.info(stats[-1].add_prefix("  ").to_string() + '\n')
 
