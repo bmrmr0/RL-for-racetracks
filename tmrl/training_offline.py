@@ -165,7 +165,7 @@ class TrainingOffline:
                 stats.append(pandas_dict(memory_len=len(self.memory), round_time=round_time, idle_time=idle_time, **DataFrame(stats_training).mean(skipna=True)))
             else:
                 print("type 2")
-                stats.append(pandas_dict(memory_len=len(self.memory), round_time=round_time, idle_time=idle_time, **DataFrame(stats_training).mean(skipna=True), average_speed=incomingdata[0], max_speed=incomingdata[1], average_distance=incomingdata[2], max_distance=incomingdata[3], acceleration_braking_ratio=incomingdata[4], track_completed=incomingdata[5]))
+                stats.append(pandas_dict(memory_len=len(self.memory), round_time=round_time, idle_time=idle_time, **DataFrame(stats_training).mean(skipna=True), average_speed=incomingdata[0], max_speed=incomingdata[1], average_distance=incomingdata[2], max_distance=incomingdata[3], acceleration_braking_ratio=incomingdata[4], track_completed=incomingdata[5], average_reward=incomingdata[6], max_reward=incomingdata[7]))
 
             #print(stats)
 

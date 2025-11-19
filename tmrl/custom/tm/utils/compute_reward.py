@@ -44,7 +44,7 @@ class RewardFunction:
                  nb_steps_before_speed_penalty=20,
                  max_speed_for_penalty=10,
                  min_speed_for_reward=40,
-                 terminate_after_minors=1):
+                 terminate_after_minors=15):
         """
         Instantiates a reward function for TM2020.
 
@@ -178,6 +178,7 @@ class RewardFunction:
         gas = data[6]
         accelerating = gas > 0.02
         braking = data[7] == 1
+        braking_raw = data[7]
         gear = data[9]
         rpm = data[10]
 
@@ -275,10 +276,10 @@ class RewardFunction:
         for _ in "_":
 
             # enigne gear 0 is R. this gives a big penalty because it should never go backwards and should be discouraged
-            if (gear == 0):
+            if False and (gear == 0):
                 print("GOING BACKWARDS - RUN TERMINATED")
                 collided = True
-                speed_reward = -20
+                speed_reward = -1000
                 terminated = True
                 continue
             
@@ -401,7 +402,7 @@ class RewardFunction:
 
         ################# OVERALL REWARD FUNCTION #################
 
-        mode = 1
+        mode = 3
 
         if mode == 1: # all rewards are considered
             reward = path_reward * path_reward_multiplier + speed_reward * speed_reward_multiplier + collision_reward * collision_reward_multiplier
@@ -409,10 +410,10 @@ class RewardFunction:
         elif mode == 2: # only path reward is considered, vanilla reward function
             reward = path_reward * path_reward_multiplier
 
-        elif mode == 2: # path and speed rewards are considered
+        elif mode == 3: # path and speed rewards are considered
             reward = path_reward * path_reward_multiplier + speed_reward * speed_reward_multiplier
         
-        elif mode == 2: # path and collision rewards are considered
+        elif mode == 4: # path and collision rewards are considered
             reward = path_reward * path_reward_multiplier + collision_reward * collision_reward_multiplier
 
         
@@ -439,7 +440,7 @@ class RewardFunction:
         "  speed:", "{:.3f}".format(speed), 
         "dist:", "{:.2f}".format(distance), 
         "displ:", "{:.2f}".format(displacement), 
-        "  extra:  ", "{:.2f}".format(data[5]), "{:.2f}".format(data[6]), data[7], data[9], "{:.2f}".format(data[10]), 
+        "  extra:  ", "{:.2f}".format(steer), "{:.2f}".format(gas), braking_raw, gear, "{:.2f}".format(rpm), 
         "se:", self.last_gear_increase , self.last_rpm_increase)
 
         self.prev_data = data

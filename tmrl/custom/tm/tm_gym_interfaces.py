@@ -154,10 +154,14 @@ class TM2020Interface(RealTimeGymInterface):
             control: np.array: [forward,backward,right,left]
         """
         if self.gamepad:
+            print("YES")
             if control is not None:
+                print(control)
                 control_gamepad(self.j, control)
         else:
+            print("NO1")
             if control is not None:
+                print("YES2")
                 actions = []
                 if control[0] > 0:
                     actions.append('f')
@@ -325,6 +329,8 @@ class TM2020InterfaceLidar(TM2020Interface):
         self.acceleration_count = 0
         self.track_completed = 0
         self.terminated = False
+        self.average_reward = 0
+        self.max_reward = 0
 
     def grab_lidar_speed_and_data(self):
         img = self.window_interface.screenshot()[:, :, :3]
@@ -444,6 +450,10 @@ class TM2020InterfaceLidarProgress(TM2020InterfaceLidar):
             self.braking_count += 1
         if accelerating:
             self.acceleration_count += 1
+
+        self.average_reward = (rew - self.average_reward) / self.data_count
+        if rew > self.max_reward:
+            self.max_reward = rew
     
         self.terminated = terminated
 
@@ -458,7 +468,7 @@ class TM2020InterfaceLidarProgress(TM2020InterfaceLidar):
             else:
                 acceleration_braking_ratio = self.acceleration_count / self.braking_count
             
-            self.lastwandbbuffer = [self.average_speed, self.max_speed, self.average_distance, self.max_distance, acceleration_braking_ratio, self.track_completed]
+            self.lastwandbbuffer = [self.average_speed, self.max_speed, self.average_distance, self.max_distance, acceleration_braking_ratio, self.track_completed, self.average_reward, self.max_reward]
             self.resetwandbbuffer()
 
         if self.conn.poll():
