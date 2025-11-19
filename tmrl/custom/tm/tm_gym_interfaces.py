@@ -428,8 +428,6 @@ class TM2020InterfaceLidarProgress(TM2020InterfaceLidar):
             
         
         rew += self.constant_penalty
-        rew = np.float32(rew)
-
 
         distance = data[1]
         speed = data[0]
@@ -451,7 +449,7 @@ class TM2020InterfaceLidarProgress(TM2020InterfaceLidar):
         if accelerating:
             self.acceleration_count += 1
 
-        self.average_reward = (rew - self.average_reward) / self.data_count
+        self.average_reward += (rew - self.average_reward) / self.data_count
         if rew > self.max_reward:
             self.max_reward = rew
     
@@ -484,7 +482,7 @@ class TM2020InterfaceLidarProgress(TM2020InterfaceLidar):
                 else:
                     self.conn.send("track not reset, not updating wandb")
         
-        return obs, rew, terminated, info
+        return obs, np.float32(rew), terminated, info
 
     def get_observation_space(self):
         """
