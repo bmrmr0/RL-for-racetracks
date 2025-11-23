@@ -187,6 +187,11 @@ class RewardFunction:
             displacement = distance
         else:
             displacement = distance - self.prev_data[1]
+        
+        # Track if going backward for immediate penalty
+        going_backward = False
+        if displacement < -0.1:  # Going backward (negative displacement)
+            going_backward = True
 
         prev_speed = self.prev_data[0]
         prev_steer = self.prev_data[5]
@@ -256,6 +261,18 @@ class RewardFunction:
             self.failure_counter = 0  # we reset the counter triggering episode termination
 
         self.cur_idx = best_index  # finally, we save our new best matching index
+        
+        # CRITICAL: Immediately penalize backward movement from the very start
+        # ROOT CAUSE: At race start (cur_idx=0), when agent goes backward:
+        # - path_reward = 0 (neutral, because best_index = cur_idx = 0)
+        # - speed_reward = 0 (no penalty for first nb_steps_before_speed_penalty steps)
+        # - Total reward = 0 (neutral!), so backward actions seem "safe" during exploration
+        # This causes the policy to learn that backward actions are acceptable
+        if going_backward:
+            # Override path_reward with heavy penalty regardless of trajectory matching
+            path_reward = -100.0  # Heavy penalty for backward movement
+            collision_reward = -50.0  # Additional penalty
+            print(f"IMMEDIATE BACKWARD PENALTY: displacement={displacement:.2f}, step={self.step_counter}, path_reward overridden to -100")
 
 
         ################# SPEED REWARD FUNCTION #################
@@ -276,11 +293,11 @@ class RewardFunction:
         for _ in "_":
 
             # enigne gear 0 is R. this gives a big penalty because it should never go backwards and should be discouraged
-            if False and (gear == 0):
+            if (gear == 0):
                 print("GOING BACKWARDS - RUN TERMINATED")
                 collided = True
                 speed_reward = -1000
-                terminated = True
+                # terminated = True
                 continue
             
             if not collided and self.step_counter - self.last_collision >= 5:

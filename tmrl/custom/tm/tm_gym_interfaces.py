@@ -153,6 +153,12 @@ class TM2020Interface(RealTimeGymInterface):
         Args:
             control: np.array: [forward,backward,right,left]
         """
+        if control is not None:
+            # CRITICAL: Prevent backward movement by clamping backward action to 0
+            # This ensures the agent can never go backward, regardless of policy output
+            control = control.copy()  # Don't modify the original
+            control[1] = min(control[1], 0.0)  # Clamp backward action to <= 0 (no backward movement)
+        
         if self.gamepad:
             print("YES")
             if control is not None:
@@ -330,7 +336,7 @@ class TM2020InterfaceLidar(TM2020Interface):
         self.track_completed = 0
         self.terminated = False
         self.average_reward = 0
-        self.max_reward = 0
+        self.max_reward = -10000
 
     def grab_lidar_speed_and_data(self):
         img = self.window_interface.screenshot()[:, :, :3]
