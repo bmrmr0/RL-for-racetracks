@@ -61,6 +61,7 @@ if platform.system() == "Windows":
             ReleaseKey(W)
         if 'b' in action:
             PressKey(S)
+            pass
         else:
             ReleaseKey(S)
         if 'l' in action:

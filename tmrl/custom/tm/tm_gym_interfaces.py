@@ -153,11 +153,12 @@ class TM2020Interface(RealTimeGymInterface):
         Args:
             control: np.array: [forward,backward,right,left]
         """
-        if control is not None:
+        
+        """if control is not None:
             # CRITICAL: Prevent backward movement by clamping backward action to 0
             # This ensures the agent can never go backward, regardless of policy output
             control = control.copy()  # Don't modify the original
-            control[1] = min(control[1], 0.0)  # Clamp backward action to <= 0 (no backward movement)
+            control[1] = min(control[1], 0.0)  # Clamp backward action to <= 0 (no backward movement)"""
         
         if self.gamepad:
             print("YES")

@@ -268,12 +268,12 @@ class RewardFunction:
         # - speed_reward = 0 (no penalty for first nb_steps_before_speed_penalty steps)
         # - Total reward = 0 (neutral!), so backward actions seem "safe" during exploration
         # This causes the policy to learn that backward actions are acceptable
-        if going_backward:
+        """if going_backward:
             # Override path_reward with heavy penalty regardless of trajectory matching
             path_reward = -100.0  # Heavy penalty for backward movement
             collision_reward = -50.0  # Additional penalty
             print(f"IMMEDIATE BACKWARD PENALTY: displacement={displacement:.2f}, step={self.step_counter}, path_reward overridden to -100")
-
+        """
 
         ################# SPEED REWARD FUNCTION #################
 
@@ -419,7 +419,7 @@ class RewardFunction:
 
         ################# OVERALL REWARD FUNCTION #################
 
-        mode = 3
+        mode = 2
 
         if mode == 1: # all rewards are considered
             reward = path_reward * path_reward_multiplier + speed_reward * speed_reward_multiplier + collision_reward * collision_reward_multiplier
