@@ -1,0 +1,160 @@
+\documentclass[11pt]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[margin=1in]{geometry}
+\usepackage{hyperref}
+\usepackage{amsmath}
+
+\title{\textbf{Reinforcement Learning for Autonomous Racing in TrackMania}}
+\author{Your Name}
+\date{December 5, 2025}
+
+\begin{document}
+
+\maketitle
+
+\noindent\textbf{Project Title:} Reinforcement Learning for Autonomous Racing in TrackMania
+
+\noindent\textbf{Domain / Category:} Reinforcement Learning, Computer Vision, Autonomous Driving
+
+\section{Introduction}
+
+This project addresses the challenge of training an autonomous agent to race in the TrackMania 2020 video game using deep reinforcement learning. The core problem is: \textit{How can an AI learn optimal racing strategies using only visual observations and vehicle telemetry, without prior knowledge of driving?}
+
+This problem is compelling for several reasons: (1) racing requires split-second decisions and optimal trajectory planning, making it an extreme test of autonomous driving, (2) video games provide a safe simulation environment for accumulating training experience, and (3) the techniques transfer to real-world robotics where real-time sensor-based decision-making is critical.
+
+I'm using the TMRL (TrackMania Reinforcement Learning) framework, which provides a distributed training architecture with rollout workers collecting experience while a central trainer updates the policy. This mirrors real-world scenarios where multiple robots collect data for centralized learning. The project compares two observation modalities (raw images vs. LIDAR), two neural architectures (CNN vs. MLP), and evaluates the Soft Actor-Critic (SAC) algorithm for continuous control.
+
+\section{Dataset}
+
+Unlike supervised learning, this RL project generates its own data through agent-environment interaction. Data consists of experience tuples $(s_t, a_t, r_t, s_{t+1}, d_t)$ where $s_t$ is the observation (images/LIDAR + speed), $a_t$ is the action (gas, brake, steering in $[-1, 1]^3$), $r_t$ is reward, $s_{t+1}$ is the next state, and $d_t$ indicates episode termination.
+
+\textbf{Data Collection:} The agent collects data in real-time at 20Hz through the TrackMania game interface. The OpenPlanet API provides telemetry (speed, gear, RPM) while screen capture provides visual observations. A replay buffer stores up to 1,000,000 transitions.
+
+\textbf{Pre-processing:}
+\begin{itemize}
+    \item \textbf{Image observations}: Screenshots (256×128) are resized to 64×64, converted to grayscale, normalized to [0,1], and stacked in groups of 4 consecutive frames to capture temporal dynamics
+    \item \textbf{LIDAR observations}: 19 rangefinder beams computed from images by detecting track borders, stacked over 4 time-steps, normalized by maximum range
+\end{itemize}
+
+\textbf{Reward Function:} Rather than simple speed rewards, the system records a demonstration trajectory, divides it into waypoints, and rewards the agent for waypoints passed per time-step. This encourages both speed and optimal racing lines. A +100 bonus is given for track completion, with early termination if the car gets stuck or strays too far.
+
+\textbf{Data Splits:}
+\begin{itemize}
+    \item \textbf{Training}: Continuous online collection with exploration (stochastic policy)
+    \item \textbf{Validation}: Periodic evaluation every 10 episodes (deterministic policy) 
+    \item \textbf{Testing}: Final evaluation over 10 runs on benchmark track
+\end{itemize}
+
+\textbf{Sample Data:} Example transitions show (action=[gas, brake, steer], speed, reward): ([1.0, 0.0, 0.2], 42.3, 1.2) for straight sections, ([0.8, 0.0, -0.3], 78.5, 2.1) when steering into turns. Successful episodes accumulate 80-100 total reward over 200-300 steps.
+
+\section{Approach}
+
+I have implemented the Soft Actor-Critic (SAC) algorithm, an off-policy actor-critic method that maximizes both expected return and policy entropy for robust exploration.
+
+\textbf{Model Architecture:}
+\begin{itemize}
+    \item \textbf{LIDAR Model}: MLP with two 256-unit hidden layers processing flattened observations (19×4 LIDAR + speed + 2 previous actions)
+    \item \textbf{Image Model}: CNN with 3 convolutional layers (32→64→64 channels, stride 2) processing 4×64×64 grayscale frames, followed by dense layers
+    \item Both architectures have actor (policy) and two critic (Q-function) networks
+\end{itemize}
+
+\textbf{Training Method:} SAC maintains a policy $\pi_\theta$, two Q-networks $Q_{\phi_1}, Q_{\phi_2}$, and their target networks. The critic loss minimizes TD-error with entropy regularization:
+\begin{equation}
+L_Q = \mathbb{E}\left[(Q(s,a) - (r + \gamma \min_i Q'_i(s',a') - \alpha \log \pi(a'|s')))^2\right]
+\end{equation}
+The actor maximizes expected Q-value minus entropy:
+\begin{equation}
+L_\pi = \mathbb{E}\left[\alpha \log \pi(a|s) - \min_i Q_i(s,a)\right]
+\end{equation}
+
+\textbf{Hyperparameters:} Learning rates: $3 \times 10^{-4}$ (actor), $5 \times 10^{-5}$ (critic); discount $\gamma=0.995$; Polyak averaging $\tau=0.995$; batch size 256; buffer size 1M transitions.
+
+\textbf{Baseline Status:} The LIDAR-based MLP model is fully implemented and training. After 200k steps, the agent completes the track with occasional crashes. The image-based CNN model is next.
+
+\section{Evaluation}
+
+\textbf{Primary Metrics:}
+\begin{itemize}
+    \item Lap time: mean and std. dev. over 10 test runs
+    \item Success rate: \% of episodes completed without crashing
+    \item Episode return: cumulative reward during training
+\end{itemize}
+
+\textbf{Planned Visualizations:}
+\begin{itemize}
+    \item Learning curves: episode return vs. training steps
+    \item Comparison plots: LIDAR vs. images, SAC vs. REDQ-SAC
+    \item Loss curves: actor and critic losses over time
+    \item Trajectory visualization: comparing agent paths to optimal racing lines
+\end{itemize}
+
+\textbf{Qualitative Analysis:}
+\begin{itemize}
+    \item Video recordings at different training stages
+    \item Failure mode categorization (e.g., missing turns, excessive braking)
+    \item Attention maps for CNN model showing which image regions influence steering
+\end{itemize}
+
+\textbf{Preliminary Results:} Initial LIDAR training shows promising learning. Episode returns increased from -10 (early) to +80 (after 500k steps). The agent navigates straight sections well but struggles with sharp turns. Training is stable with gradual lap time improvement.
+
+\section{Next Steps}
+
+\textbf{Immediate Goals (1-2 weeks):}
+\begin{enumerate}
+    \item Complete LIDAR model training to convergence (1-2M steps)
+    \item Train and evaluate image-based CNN model
+    \item Implement REDQ-SAC variant for comparison
+    \item Run 10 test episodes per model and collect statistics
+\end{enumerate}
+
+\textbf{Analysis \& Refinement:}
+\begin{enumerate}
+    \item Generate all planned visualizations (learning curves, trajectories, attention maps)
+    \item Hyperparameter tuning experiments
+    \item Ablation study: effect of observation history length
+    \item Categorize and analyze failure modes
+\end{enumerate}
+
+\textbf{Challenges:}
+\begin{itemize}
+    \item \textbf{Training time}: Full runs require 6-12 hours; will use cloud GPU
+    \item \textbf{Exploration}: Agent sometimes gets stuck locally; will adjust entropy coefficient
+    \item \textbf{Windows-only setup}: TrackMania + OpenPlanet only works on Windows; documented workaround established
+\end{itemize}
+
+\section{Deliverables}
+
+\textbf{Final Outputs:}
+\begin{itemize}
+    \item Two trained models (LIDAR and image-based) completing benchmark track
+    \item Comparative analysis of observation spaces and architectures
+    \item Final report (8-10 pages) with methodology and results
+    \item Clean, documented code repository
+\end{itemize}
+
+\textbf{Timeline:}
+\begin{itemize}
+    \item Dec 5: Milestone submission
+    \item Dec 12: Complete all training runs
+    \item Dec 15-18: Analysis and visualization
+    \item Dec 19: Final report submission
+\end{itemize}
+
+\textbf{Optional:} Submit to TMRL competition leaderboard (January 2026).
+
+\section{References}
+
+\begin{enumerate}
+    \item Haarnoja, T., et al. (2018). Soft Actor-Critic: Off-Policy Maximum Entropy Deep Reinforcement Learning with a Stochastic Actor. \textit{ICML}.
+    
+    \item Chen, X., et al. (2021). Randomized Ensembled Double Q-Learning: Learning Fast Without a Model. \textit{ICLR}.
+    
+    \item Bouteiller, Y., \& Geze, E. (2023). TMRL: TrackMania Reinforcement Learning. \url{https://github.com/trackmania-rl/tmrl}
+    
+    \item Wurman, P. R., et al. (2022). Outracing champion Gran Turismo drivers with deep reinforcement learning. \textit{Nature}, 602(7896), 223-228.
+    
+    \item Mnih, V., et al. (2015). Human-level control through deep reinforcement learning. \textit{Nature}, 518(7540), 529-533.
+\end{enumerate}
+
+\end{document}
+
