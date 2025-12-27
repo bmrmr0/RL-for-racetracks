@@ -1,0 +1,29 @@
+name: Cursor Bugbot Code Review
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+jobs:
+  bugbot-review:
+    runs-on: ubuntu-latest
+    # Only run on non-draft PRs
+    if: github.event.pull_request.draft == false
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Fetch full history for better context
+
+      - name: Install Cursor CLI
+        run: |
+          curl https://cursor.com/install -fsS | bash
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+
+      - name: Run Bugbot Review
+        env:
+          CURSOR_API_KEY: ${{ secrets.CURSOR_API_KEY }}
+        run: |
+          cursor-agent --force --model=auto --output-format=text --print "Review the code changes in this pull request for bugs, security issues, and code quality problems"
+

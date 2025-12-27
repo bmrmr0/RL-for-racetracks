@@ -122,6 +122,54 @@ Detailed instructions for installation are provided at [this link](readme/Instal
 
 Full guidance toward setting up an environment in TrackMania 2020, testing pre-trained weights, as well as a beginner-friendly tutorial to train, test, and fine-tune your own models, are provided at [this link](readme/get_started.md).
 
+## Experiment Framework
+
+For rapid experimentation with reward functions, neural architectures, and RL algorithms, use the new experiment framework:
+
+```bash
+# List available presets
+python train.py --list-presets
+
+# Run with baseline configuration (current system behavior)
+python train.py --preset baseline
+
+# Run with time-optimal reward (speed-focused training)
+python train.py --preset time_optimal
+
+# Run with racing line optimization (apex detection)
+python train.py --preset racing_line
+
+# Custom experiment name
+python train.py --preset time_optimal --name my_experiment
+
+# Override specific parameters
+python train.py --preset baseline --override reward_params.time_pressure_weight=0.8
+
+# List previous experiments
+python train.py --list-experiments
+
+# Compare experiments
+python compare.py --list
+python compare.py --experiments exp1 exp2
+```
+
+### Available Reward Functions
+
+| Reward Type | Description |
+|-------------|-------------|
+| `baseline` | Original waypoint progress reward |
+| `time_optimal` | Adds time pressure for faster lap completion |
+| `racing_line` | Apex detection + curvature-aware speed targets |
+| `hybrid` | Configurable multi-component reward |
+
+### Configuration
+
+Experiments are configured via YAML files in `configs/`:
+- `configs/base.yaml` - Default parameters
+- `configs/presets/*.yaml` - Ready-to-use presets
+
+See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for detailed documentation.
+
 ## TMRL python library
 
 An advanced tutorial toward implementing your own ad-hoc optimized training pipelines for your own real-time tasks is provided [here](readme/tuto_library.md).

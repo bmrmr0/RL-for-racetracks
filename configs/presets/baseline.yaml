@@ -1,0 +1,48 @@
+# Baseline Preset - Current System As-Is
+# Use this to verify the new framework matches existing behavior
+
+name: baseline_preset
+description: "Exact replica of current TMRL baseline for verification"
+reward_type: baseline
+model_type: mlp
+algorithm: sac
+
+reward_params:
+  nb_obs_forward: 10
+  nb_obs_backward: 10
+  nb_zero_rew_before_failure: 10
+  min_nb_steps_before_failure: 70
+  max_dist_from_traj: 60.0
+
+model_params:
+  hidden_sizes: [256, 256]
+  activation: relu
+
+training_params:
+  lr_actor: 0.0003
+  lr_critic: 0.00005
+  gamma: 0.995
+  polyak: 0.995
+  alpha: 0.37
+  learn_entropy_coef: false
+  target_entropy: -7.0
+  memory_size: 1000000
+  batch_size: 256
+  epochs: 10000
+  rounds: 10
+  steps: 1000
+  update_model_interval: 100
+  update_buffer_interval: 100
+  max_training_steps_per_env_step: 2.0
+  start_training: 400
+  cuda: true
+
+env_params:
+  interface_type: lidar
+  img_hist_len: 4
+  gamepad: true
+
+tags:
+  - baseline
+  - verification
+

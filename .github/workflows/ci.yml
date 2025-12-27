@@ -1,0 +1,103 @@
+name: CI
+
+on:
+  push:
+    branches: [master, main, "andrew/*"]
+  pull_request:
+    branches: [master, main]
+
+jobs:
+  lint:
+    name: Lint & Type Check
+    runs-on: ubuntu-latest
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+      
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install ruff mypy types-PyYAML types-requests
+          pip install numpy torch pandas pyyaml  # Core deps for type checking
+      
+      - name: Run Ruff linter
+        run: |
+          ruff check . --output-format=github
+        continue-on-error: true
+      
+      - name: Run Ruff formatter check
+        run: |
+          ruff format --check .
+        continue-on-error: true
+      
+      - name: Run mypy on experiment framework
+        run: |
+          mypy experiments/ train.py compare.py --ignore-missing-imports --no-error-summary
+        continue-on-error: true
+
+  syntax-check:
+    name: Syntax Check
+    runs-on: ubuntu-latest
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+      
+      - name: Check Python syntax
+        run: |
+          python -m py_compile train.py compare.py
+          python -m py_compile experiments/config.py
+          python -m py_compile experiments/factories.py
+          python -m py_compile experiments/runner.py
+          python -m py_compile experiments/comparison.py
+
+  test-config:
+    name: Test Config Loading
+    runs-on: ubuntu-latest
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+      
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pyyaml
+      
+      - name: Test config loading
+        run: |
+          python -c "
+          from experiments.config import ExperimentConfig
+          
+          # Test basic creation
+          config = ExperimentConfig(name='test', reward_type='baseline')
+          config.validate()
+          print('✓ Basic config creation works')
+          
+          # Test YAML loading
+          config = ExperimentConfig.from_yaml('configs/presets/baseline.yaml')
+          config.validate()
+          print('✓ YAML loading works')
+          
+          # Test all presets
+          for preset in ['baseline', 'time_optimal', 'racing_line']:
+              config = ExperimentConfig.from_yaml(f'configs/presets/{preset}.yaml')
+              config.validate()
+              print(f'✓ Preset {preset} loads and validates')
+          
+          print('All config tests passed!')
+          "
+

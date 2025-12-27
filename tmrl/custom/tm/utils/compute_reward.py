@@ -479,3 +479,418 @@ class RewardFunction:
         self.failure_counter = 0
 
         self.resetvars()
+
+
+# ============================================================================
+# EXPERIMENT FRAMEWORK REWARD VARIANTS
+# These subclasses extend the base RewardFunction with different strategies
+# for optimizing lap times.
+# ============================================================================
+
+
+class TimeOptimalReward(RewardFunction):
+    """
+    Time-optimal reward function.
+    
+    Adds time pressure to the base reward by penalizing slow segment completion
+    and rewarding fast progress through the track.
+    
+    Key features:
+    - Base waypoint progress reward (inherited)
+    - Time bonus: Rewards faster-than-baseline progress
+    - Time penalty: Penalizes slower-than-baseline progress
+    - Speed maintenance rewards
+    """
+    
+    def __init__(self,
+                 reward_data_path,
+                 ws_client,
+                 time_pressure_weight=0.5,
+                 baseline_steps_per_waypoint=1.0,
+                 speed_bonus_weight=0.3,
+                 **kwargs):
+        """
+        Initialize TimeOptimalReward.
+        
+        Args:
+            time_pressure_weight: Weight for time pressure bonus/penalty
+            baseline_steps_per_waypoint: Expected steps per waypoint (baseline)
+            speed_bonus_weight: Weight for speed maintenance bonus
+            **kwargs: Additional args passed to parent
+        """
+        super().__init__(reward_data_path, ws_client, **kwargs)
+        
+        self.time_pressure_weight = time_pressure_weight
+        self.baseline_steps_per_waypoint = baseline_steps_per_waypoint
+        self.speed_bonus_weight = speed_bonus_weight
+        
+        logging.info(f"TimeOptimalReward initialized with time_pressure={time_pressure_weight}")
+    
+    def compute_reward(self, pos, data):
+        """
+        Compute time-optimal reward.
+        
+        Extends base reward with time pressure component.
+        """
+        # Get base reward
+        base_reward, terminated = super().compute_reward(pos, data)
+        
+        # Extract speed from data
+        speed = data[0] if len(data) > 0 else 0
+        
+        # Time pressure: compare actual progress to expected baseline
+        expected_progress = self.step_counter * self.baseline_steps_per_waypoint
+        actual_progress = self.cur_idx
+        
+        if actual_progress > expected_progress:
+            # Going faster than baseline - bonus
+            time_reward = (actual_progress - expected_progress) * self.time_pressure_weight
+        else:
+            # Going slower than baseline - penalty (smaller magnitude)
+            time_reward = (actual_progress - expected_progress) * self.time_pressure_weight * 0.5
+        
+        # Speed bonus for maintaining high speed
+        speed_reward = 0.0
+        if speed > 100:
+            speed_reward = (speed - 100) / 200.0 * self.speed_bonus_weight
+        elif speed < 30 and self.step_counter > 20:
+            # Penalty for going too slow after initial acceleration
+            speed_reward = -0.5 * self.speed_bonus_weight
+        
+        total_reward = base_reward + time_reward + speed_reward
+        
+        return total_reward, terminated
+
+
+class RacingLineReward(RewardFunction):
+    """
+    Racing line optimization reward function.
+    
+    Adds apex detection and curvature-aware speed targets to encourage
+    optimal racing trajectories.
+    
+    Key features:
+    - Base waypoint progress reward (inherited)
+    - Apex bonus: Extra reward for being close to track apexes (turn entry points)
+    - Curvature-aware speed: Rewards appropriate speed for track curvature
+    - Momentum preservation: Penalizes unnecessary speed loss
+    """
+    
+    def __init__(self,
+                 reward_data_path,
+                 ws_client,
+                 apex_bonus_weight=1.0,
+                 curvature_lookahead=20,
+                 speed_reward_weight=0.8,
+                 apex_distance_threshold=5.0,
+                 **kwargs):
+        """
+        Initialize RacingLineReward.
+        
+        Args:
+            apex_bonus_weight: Weight for apex proximity bonus
+            curvature_lookahead: Waypoints to look ahead for curvature calculation
+            speed_reward_weight: Weight for speed optimization
+            apex_distance_threshold: Distance threshold for apex bonus
+            **kwargs: Additional args passed to parent
+        """
+        super().__init__(reward_data_path, ws_client, **kwargs)
+        
+        self.apex_bonus_weight = apex_bonus_weight
+        self.curvature_lookahead = curvature_lookahead
+        self.speed_reward_weight = speed_reward_weight
+        self.apex_distance_threshold = apex_distance_threshold
+        
+        # Pre-compute apex locations
+        self.apex_indices = self._detect_apex_locations()
+        
+        logging.info(f"RacingLineReward initialized. Found {len(self.apex_indices)} apex points.")
+    
+    def _detect_apex_locations(self):
+        """
+        Pre-compute apex locations based on track curvature.
+        
+        Returns:
+            List of waypoint indices where apexes are located
+        """
+        apex_indices = []
+        
+        if len(self.pathdata) < 5:
+            return apex_indices
+        
+        for i in range(2, len(self.pathdata) - 2):
+            # Calculate curvature using vectors before and after point
+            v1 = self.pathdata[i] - self.pathdata[i-1]
+            v2 = self.pathdata[i+1] - self.pathdata[i]
+            
+            # Normalize vectors
+            v1_norm = np.linalg.norm(v1)
+            v2_norm = np.linalg.norm(v2)
+            
+            if v1_norm < 1e-6 or v2_norm < 1e-6:
+                continue
+            
+            v1 = v1 / v1_norm
+            v2 = v2 / v2_norm
+            
+            # Calculate angle between vectors
+            dot = np.clip(np.dot(v1, v2), -1.0, 1.0)
+            angle = np.arccos(dot)
+            
+            # Apex is a point of significant curvature change
+            if angle > 0.3:  # ~17 degrees - significant turn
+                apex_indices.append(i)
+        
+        return apex_indices
+    
+    def _compute_apex_bonus(self, pos):
+        """
+        Compute bonus for proximity to apex points.
+        
+        Args:
+            pos: Current position
+            
+        Returns:
+            Apex bonus reward
+        """
+        bonus = 0.0
+        
+        for apex_idx in self.apex_indices:
+            # Only consider apexes near current position
+            if abs(self.cur_idx - apex_idx) > 10:
+                continue
+            
+            apex_pos = self.pathdata[apex_idx]
+            dist_to_apex = np.linalg.norm(pos - apex_pos)
+            
+            if dist_to_apex < self.apex_distance_threshold:
+                # Closer to apex = more reward (linear decay)
+                bonus += self.apex_bonus_weight * (1.0 - dist_to_apex / self.apex_distance_threshold)
+        
+        return bonus
+    
+    def _compute_optimal_speed(self, cur_idx):
+        """
+        Compute optimal speed for current track segment based on upcoming curvature.
+        
+        Args:
+            cur_idx: Current waypoint index
+            
+        Returns:
+            Optimal speed target (km/h)
+        """
+        if cur_idx + self.curvature_lookahead >= len(self.pathdata):
+            lookahead = len(self.pathdata) - cur_idx - 1
+        else:
+            lookahead = self.curvature_lookahead
+        
+        if lookahead < 2:
+            return 150.0  # Default speed
+        
+        # Calculate maximum curvature in lookahead window
+        max_curvature = 0.0
+        
+        for i in range(cur_idx + 1, min(cur_idx + lookahead, len(self.pathdata) - 1)):
+            if i < 1:
+                continue
+            
+            v1 = self.pathdata[i] - self.pathdata[i-1]
+            v2 = self.pathdata[i+1] - self.pathdata[i] if i+1 < len(self.pathdata) else v1
+            
+            v1_norm = np.linalg.norm(v1)
+            v2_norm = np.linalg.norm(v2)
+            
+            if v1_norm < 1e-6 or v2_norm < 1e-6:
+                continue
+            
+            dot = np.clip(np.dot(v1/v1_norm, v2/v2_norm), -1.0, 1.0)
+            angle = np.arccos(dot)
+            max_curvature = max(max_curvature, angle)
+        
+        # Map curvature to target speed
+        if max_curvature < 0.1:  # Straight
+            target_speed = 300.0
+        elif max_curvature < 0.3:  # Gentle curve
+            target_speed = 200.0
+        elif max_curvature < 0.6:  # Medium turn
+            target_speed = 120.0
+        else:  # Sharp turn
+            target_speed = 80.0
+        
+        return target_speed
+    
+    def _compute_speed_reward(self, speed):
+        """
+        Compute reward for appropriate speed given track curvature.
+        
+        Args:
+            speed: Current speed
+            
+        Returns:
+            Speed optimization reward
+        """
+        target_speed = self._compute_optimal_speed(self.cur_idx)
+        
+        speed_error = abs(speed - target_speed)
+        
+        # Gaussian reward centered at target speed
+        reward = self.speed_reward_weight * np.exp(-speed_error**2 / (2 * 50**2))
+        
+        # Extra penalty for being much slower than target
+        if speed < target_speed * 0.7:
+            reward -= 0.3 * self.speed_reward_weight
+        
+        return reward
+    
+    def compute_reward(self, pos, data):
+        """
+        Compute racing line optimized reward.
+        
+        Extends base reward with apex and speed components.
+        """
+        # Get base reward
+        base_reward, terminated = super().compute_reward(pos, data)
+        
+        # Extract speed from data
+        speed = data[0] if len(data) > 0 else 0
+        
+        # Apex bonus
+        apex_bonus = self._compute_apex_bonus(pos)
+        
+        # Speed reward (curvature-aware)
+        speed_reward = self._compute_speed_reward(speed)
+        
+        total_reward = base_reward + apex_bonus + speed_reward
+        
+        return total_reward, terminated
+
+
+class HybridReward(RewardFunction):
+    """
+    Hybrid reward combining multiple optimization strategies.
+    
+    Allows configurable weights for different reward components.
+    """
+    
+    def __init__(self,
+                 reward_data_path,
+                 ws_client,
+                 path_weight=1.0,
+                 speed_weight=0.5,
+                 time_weight=0.3,
+                 apex_weight=0.5,
+                 efficiency_weight=0.2,
+                 **kwargs):
+        """
+        Initialize HybridReward.
+        
+        Args:
+            path_weight: Weight for path following reward
+            speed_weight: Weight for speed rewards
+            time_weight: Weight for time pressure
+            apex_weight: Weight for apex bonuses
+            efficiency_weight: Weight for efficiency (smooth driving)
+            **kwargs: Additional args passed to parent
+        """
+        super().__init__(reward_data_path, ws_client, **kwargs)
+        
+        self.path_weight = path_weight
+        self.speed_weight = speed_weight
+        self.time_weight = time_weight
+        self.apex_weight = apex_weight
+        self.efficiency_weight = efficiency_weight
+        
+        # For tracking previous state
+        self.prev_speed = 0
+        self.prev_steer = 0
+        
+        logging.info(f"HybridReward initialized with weights: path={path_weight}, "
+                     f"speed={speed_weight}, time={time_weight}, apex={apex_weight}, "
+                     f"efficiency={efficiency_weight}")
+    
+    def compute_reward(self, pos, data):
+        """
+        Compute hybrid reward.
+        """
+        # Get base path reward
+        terminated = False
+        self.step_counter += 1
+        
+        # === Path reward (from base class logic) ===
+        min_dist = np.inf
+        index = self.cur_idx
+        temp = self.nb_obs_forward
+        best_index = 0
+        
+        while True:
+            dist = np.linalg.norm(pos - self.pathdata[index])
+            if dist <= min_dist:
+                min_dist = dist
+                best_index = index
+                temp = self.nb_obs_forward
+            index += 1
+            temp -= 1
+            if index >= self.pathdatalen or temp <= 0:
+                if min_dist > self.max_dist_from_traj:
+                    best_index = self.cur_idx
+                break
+        
+        path_reward = (best_index - self.cur_idx) * self.path_weight
+        
+        if best_index == self.cur_idx:
+            min_dist = np.inf
+            index = self.cur_idx
+            while True:
+                dist = np.linalg.norm(pos - self.pathdata[index])
+                if dist <= min_dist:
+                    min_dist = dist
+                    best_index = index
+                    temp = self.nb_obs_backward
+                index -= 1
+                temp -= 1
+                if index <= 0 or temp <= 0:
+                    break
+            
+            if self.step_counter > self.min_nb_steps_before_failure:
+                self.failure_counter += 1
+                if self.failure_counter > self.nb_zero_rew_before_failure:
+                    terminated = True
+        else:
+            self.failure_counter = 0
+        
+        self.cur_idx = best_index
+        
+        # Extract data
+        speed = data[0] if len(data) > 0 else 0
+        steer = data[5] if len(data) > 5 else 0
+        
+        # === Speed reward ===
+        speed_reward = 0.0
+        if speed > 100:
+            speed_reward = (speed - 100) / 200.0 * self.speed_weight
+        elif speed < 30 and self.step_counter > 20:
+            speed_reward = -0.3 * self.speed_weight
+        
+        # === Time pressure reward ===
+        expected_progress = self.step_counter * 1.0
+        actual_progress = self.cur_idx
+        time_reward = (actual_progress - expected_progress) * 0.1 * self.time_weight
+        
+        # === Efficiency reward (smooth steering) ===
+        steer_change = abs(steer - self.prev_steer)
+        efficiency_reward = -steer_change * self.efficiency_weight if steer_change > 0.3 else 0
+        
+        # Update previous state
+        self.prev_speed = speed
+        self.prev_steer = steer
+        
+        # Combine all rewards
+        total_reward = path_reward + speed_reward + time_reward + efficiency_reward
+        
+        return total_reward, terminated
+    
+    def reset(self):
+        """Reset for new episode."""
+        super().reset()
+        self.prev_speed = 0
+        self.prev_steer = 0
