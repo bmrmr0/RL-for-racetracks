@@ -1,0 +1,52 @@
+# Racing Line Preset
+# Adds apex detection and curvature-aware speed targets
+
+name: racing_line
+description: "Racing line optimization with apex detection and speed targets"
+reward_type: racing_line
+model_type: mlp
+algorithm: sac
+
+reward_params:
+  nb_obs_forward: 20  # Larger lookahead for apex detection
+  nb_obs_backward: 10
+  nb_zero_rew_before_failure: 10
+  min_nb_steps_before_failure: 70
+  max_dist_from_traj: 60.0
+  apex_bonus_weight: 1.0  # Bonus for hitting apexes
+  curvature_lookahead: 20  # Waypoints to look ahead for curvature
+  speed_reward_weight: 0.8  # Weight for speed optimization
+
+model_params:
+  hidden_sizes: [256, 256]
+  activation: relu
+
+training_params:
+  lr_actor: 0.0003
+  lr_critic: 0.00005
+  gamma: 0.995
+  polyak: 0.995
+  alpha: 0.37
+  learn_entropy_coef: false
+  target_entropy: -7.0
+  memory_size: 1000000
+  batch_size: 256
+  epochs: 10000
+  rounds: 10
+  steps: 1000
+  update_model_interval: 100
+  update_buffer_interval: 100
+  max_training_steps_per_env_step: 2.0
+  start_training: 400
+  cuda: true
+
+env_params:
+  interface_type: lidar
+  img_hist_len: 4
+  gamepad: true
+
+tags:
+  - racing_line
+  - apex_detection
+  - optimal_trajectory
+
