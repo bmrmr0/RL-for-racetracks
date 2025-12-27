@@ -5,17 +5,16 @@ Enables rapid experimentation with reward functions, neural architectures,
 and RL algorithms through configuration-driven development.
 """
 
-from .config import ExperimentConfig
-from .runner import ExperimentRunner
-from .factories import RewardFactory, ModelFactory, AlgorithmFactory
 from .comparison import ExperimentComparison
+from .config import ExperimentConfig
+from .factories import AlgorithmFactory, ModelFactory, RewardFactory
+from .runner import ExperimentRunner
 
 __all__ = [
-    'ExperimentConfig',
-    'ExperimentRunner', 
-    'RewardFactory',
-    'ModelFactory',
-    'AlgorithmFactory',
-    'ExperimentComparison'
+    "ExperimentConfig",
+    "ExperimentRunner",
+    "RewardFactory",
+    "ModelFactory",
+    "AlgorithmFactory",
+    "ExperimentComparison",
 ]
-

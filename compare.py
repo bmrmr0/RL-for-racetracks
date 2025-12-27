@@ -22,4 +22,3 @@ from experiments.comparison import compare_experiments_cli
 
 if __name__ == "__main__":
     compare_experiments_cli()
-
